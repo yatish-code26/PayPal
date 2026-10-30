@@ -112,40 +112,8 @@ python -m pytest -v
 ```
 All 10 test cases run in under 1 second, verifying cents arithmetic, fuel surcharge formulas, signature audit reconciliation, settlement authorization rules, PayPal idempotency, and webhook deduplication.
 
----
 
-## 6. Three-Minute Judge Demonstration Walkthrough
-
-1. **0:00 - 0:30: The Business Problem & Control Tower**
-   - Open `http://127.0.0.1:8000`. Show the Executive Control Tower metrics ($19,734.00 total billed, $11,392.00 verified payable).
-   - Point out invoice `#INV-2025-88419` from Apex Global Freight Logistics billed at $5,522.00.
-2. **0:30 - 1:00: Autonomous Audit**
-   - Click **"Execute $2,180 Signature Audit"** in the top header.
-   - The audit engine flags 4 uncontracted charges totaling **$2,180.00**, isolating the legitimate payable balance of **$3,342.00**.
-3. **1:00 - 1:45: Deep Evidence Traceability**
-   - Click **"Workbench"** to enter the Evidence Workbench.
-   - Inspect the side-by-side comparison:
-     - Item 1: Off-tariff spot rate vs Clause 3.1 contracted flat lane rate ($600 overcharge).
-     - Item 2: EIA/DOE Diesel fuel surcharge formula (12% contracted vs 21% billed = $380 overcharge).
-     - Item 3: Unauthorized Liftgate vs BOL proof of dock-to-dock forklift facility ($350 overcharge).
-     - Item 5: Prohibited secondary congestion fee duplicating dwell time ($850 duplicate).
-4. **1:45 - 2:15: Dispute Generation**
-   - Navigate to **"Dispute Center"**.
-   - Review the generated formal commercial dispute letter citing contract references, calculation steps, and carrier response deadline.
-   - Click **"Simulate Carrier Delivery"**.
-5. **2:15 - 2:45: Financial Invariant Defense & Settlement**
-   - Navigate to **"Settlement Center"**.
-   - Click **"Test Pay Blocked Duplicate"** to demonstrate that the policy engine blocks unauthorized or corrupt payouts (HTTP 403 Forbidden).
-   - Enter Dual Approvers (`sarah.chen@shipper.internal` and `david.ross@shipper.internal`) and click **"Authorize Settlement Intent"**.
-   - Click **"Execute PayPal Sandbox Payout ($3,342.00)"**.
-   - Inspect the returned PayPal Batch ID (`PAYPAL-SBX-BATCH-...`) and item status.
-6. **2:45 - 3:00: Webhook Reconciliation**
-   - Under the Webhook Simulator, click **"Simulate Item Succeeded"**.
-   - Observe the final state transition: Invoice status becomes **RECONCILED**, and audit trail records the event.
-
----
-
-## 7. Operational Modes & Honesty Statement
+## 6. Operational Modes & Honesty Statement
 
 FreightGuard distinguishes between operational modes:
 - **`LOCAL_DEMO` (Default)**: 100% offline, deterministic local simulation. Generates realistic PayPal batch/item IDs and response payloads labeled as `Local Sandbox Adapter (Simulation - No External Network)`. Requires zero external internet or credentials.
@@ -153,6 +121,6 @@ FreightGuard distinguishes between operational modes:
 
 ---
 
-## 8. License
+## 7. License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
