@@ -26,3 +26,4 @@ if ($LASTEXITCODE -ne 0) {
 # Launch FreightGuard Web Application
 Write-Host "[*] Starting FreightGuard on http://localhost:8000 ..." -ForegroundColor Green
 & $PythonCmd run_server.py
+

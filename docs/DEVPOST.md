@@ -110,3 +110,4 @@ Judges can run FreightGuard immediately with **zero external API keys**:
 - **PayPal Developer Platform:** Payouts API (`/v1/payments/payouts`), OAuth 2.0 client credentials, webhook signature verification.
 - **AI Models:** Groq (`llama-3.3-70b-versatile`), Google Gemini (`gemini-2.0-flash`), OpenAI (`gpt-4o-mini`).
 - **Open-Source Software:** FastAPI, Uvicorn, Pydantic, PyPDF, PyTest, ItsDangerous.
+

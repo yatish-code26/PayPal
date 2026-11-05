@@ -12,3 +12,4 @@ services:
       - key: AI_PROVIDER
         value: LOCAL_DETERMINISTIC
     healthCheckPath: /healthz
+

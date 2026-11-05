@@ -35,3 +35,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 
 # Launch production server
 CMD ["python", "run_server.py"]
+
