@@ -85,6 +85,30 @@ const SettlementView = {
           </div>
         </div>
 
+        <!-- 5-Step Deterministic Financial Settlement Stepper -->
+        <div class="settlement-stepper">
+          <div class="step-item ${isAudited ? 'completed' : 'active'}">
+            <div class="step-circle">${isAudited ? '✓' : '1'}</div>
+            <div class="step-label">1. Audit Validated</div>
+          </div>
+          <div class="step-item ${isAuthorized || isPaid ? 'completed' : (isAudited ? 'active' : '')}">
+            <div class="step-circle">${isAuthorized || isPaid ? '✓' : '2'}</div>
+            <div class="step-label">2. Signoff 1 (Sarah)</div>
+          </div>
+          <div class="step-item ${isAuthorized || isPaid ? 'completed' : ''}">
+            <div class="step-circle">${isAuthorized || isPaid ? '✓' : '3'}</div>
+            <div class="step-label">3. Signoff 2 (David)</div>
+          </div>
+          <div class="step-item ${isPaid ? 'completed' : (isAuthorized ? 'active' : '')}">
+            <div class="step-circle">${isPaid ? '✓' : '4'}</div>
+            <div class="step-label">4. PayPal Sandbox Payout</div>
+          </div>
+          <div class="step-item ${invoice.settlement_status === 'RECONCILED' ? 'completed' : (isPaid ? 'active' : '')}">
+            <div class="step-circle">${invoice.settlement_status === 'RECONCILED' ? '✓' : '5'}</div>
+            <div class="step-label">5. Webhook Reconciled</div>
+          </div>
+        </div>
+
         <div class="workbench-grid">
           <!-- Left: Authorization & Payout Trigger -->
           <div class="panel-card">

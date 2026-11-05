@@ -103,6 +103,12 @@ class WebhookSimulateRequest(BaseModel):
     event_id: Optional[str] = None
 
 class SettingsUpdateSchema(BaseModel):
-    mode: str = "LOCAL_DEMO" # LOCAL_DEMO | LIVE_SANDBOX
+    mode: Optional[str] = "LOCAL_DEMO" # LOCAL_DEMO | LIVE_SANDBOX
     paypal_client_id: Optional[str] = None
     paypal_client_secret: Optional[str] = None
+    paypal_webhook_id: Optional[str] = None
+    simulate_failure_mode: Optional[str] = None # None | UNCLAIMED | FAILED | BLOCKED
+    ai_provider: Optional[str] = None # GROQ | GEMINI | OPENAI | LOCAL_DETERMINISTIC
+    groq_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None

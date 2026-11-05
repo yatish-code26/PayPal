@@ -29,6 +29,13 @@ class WebhookService:
     def __init__(self, db_conn: sqlite3.Connection):
         self.conn = db_conn
 
+    def verify_signature(self, headers: Dict[str, str], raw_body: bytes, adapter=None) -> bool:
+        """Verifies cryptographic or HMAC signature of the incoming webhook."""
+        if adapter is None:
+            from backend.paypal_adapter import PayPalPayoutsAdapter
+            adapter = PayPalPayoutsAdapter()
+        return adapter.verify_webhook_signature(headers, raw_body)
+
     def process_webhook_event(
         self,
         event_payload: Dict[str, Any],

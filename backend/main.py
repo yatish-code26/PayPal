@@ -2,7 +2,7 @@
 Main entrypoint providing deterministic freight financial control tower APIs,
 evidence intelligence, dispute workflows, and PayPal settlement orchestration.
 """
-from fastapi import FastAPI, HTTPException, Request, Depends, status
+from fastapi import FastAPI, HTTPException, Request, Depends, status, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +10,10 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 import json
 import uuid
+import io
 from datetime import datetime, timezone
 
-from backend.config import APP_MODE, BASE_DIR
+from backend.config import APP_MODE, BASE_DIR, CORS_ALLOWED_ORIGINS
 from backend.database import get_db, record_audit_event
 from backend.policy_engine import (
     cents_to_dollars,
@@ -24,14 +25,24 @@ from backend.policy_engine import (
 )
 from backend.tariff_engine import TariffRAGEngine
 from backend.dispute_generator import generate_dispute_package
-from backend.paypal_adapter import PayPalPayoutsAdapter, PayPalAdapterException
+from backend.paypal_adapter import PayPalPayoutsAdapter, PayPalAdapterException, generate_local_webhook_signature
 from backend.webhook_service import WebhookService
 from backend.seed_data import populate_seed_data
+import backend.ai_service as ai_service
+from backend.auth import (
+    DEMO_USERS,
+    create_token_for_user,
+    decode_token,
+    get_current_user,
+    get_optional_user,
+)
+from backend.rate_limiter import settlement_limiter
 from backend.models import (
     SettlementAuthorizeRequest,
     SettlementPayoutRequest,
     WebhookSimulateRequest,
-    DisputeGenerateRequest
+    DisputeGenerateRequest,
+    SettingsUpdateSchema
 )
 
 app = FastAPI(
@@ -42,7 +53,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -372,6 +383,125 @@ def run_invoice_audit(invoice_id: str):
             "summary_message": f"Autonomous audit verified: Identified ${cents_to_dollars(total_discrepancy_cents)} in discrepancies. Legitimate payable amount is ${cents_to_dollars(total_payable_cents)}."
         }
 
+@app.post("/api/invoices/upload")
+async def upload_invoice(file: UploadFile = File(...)):
+    """Uploads an invoice (PDF or text), extracts structured fields via AI service,
+    persists the invoice and line items in SQLite, and executes the deterministic audit pipeline.
+    """
+    filename = file.filename or "uploaded_invoice.txt"
+    content_bytes = await file.read()
+    raw_text = ""
+
+    if filename.lower().endswith(".pdf") or (file.content_type and "pdf" in file.content_type.lower()):
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(content_bytes))
+            pages = [page.extract_text() or "" for page in reader.pages]
+            raw_text = "\n".join(pages)
+        except Exception:
+            try:
+                import fitz
+                doc = fitz.open(stream=content_bytes, filetype="pdf")
+                raw_text = "\n".join([page.get_text() for page in doc])
+            except Exception:
+                raw_text = content_bytes.decode("utf-8", errors="ignore")
+    else:
+        raw_text = content_bytes.decode("utf-8", errors="ignore")
+
+    if not raw_text.strip():
+        raise HTTPException(status_code=400, detail="Uploaded file contains no readable text content.")
+
+    # Call AI extraction service
+    extracted = ai_service.extract_invoice(raw_text)
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        carrier_name = extracted.get("carrier_name", "Apex Global Freight Logistics")
+        cur.execute("SELECT id FROM carriers WHERE name LIKE ? LIMIT 1", (f"%{carrier_name[:10]}%",))
+        c_row = cur.fetchone()
+        carrier_id = c_row["id"] if c_row else "carr_apex_01"
+
+        inv_num = extracted.get("invoice_number") or f"INV-UPL-{uuid.uuid4().hex[:6].upper()}"
+        inv_id = inv_num
+        shipment_ref = extracted.get("shipment_reference") or "SH-884192"
+
+        cur.execute("SELECT id FROM shipments WHERE id = ? OR bol_number = ?", (shipment_ref, shipment_ref))
+        s_row = cur.fetchone()
+        shipment_id = s_row["id"] if s_row else "SH-884192"
+
+        total_billed = extracted.get("total_billed_cents", 0)
+        inv_date = extracted.get("invoice_date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        cur.execute("""
+            INSERT OR REPLACE INTO invoices
+            (id, carrier_id, shipment_id, invoice_number, invoice_date, due_date, currency,
+             total_billed_cents, expected_amount_cents, disputed_amount_cents, approved_payable_cents,
+             held_amount_cents, audit_status, settlement_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 'PENDING_AUDIT', 'UNSETTLED', ?, ?)
+        """, (
+            inv_id, carrier_id, shipment_id, inv_num, inv_date, inv_date,
+            extracted.get("currency", "USD"), total_billed, now_str, now_str
+        ))
+
+        cur.execute("DELETE FROM invoice_items WHERE invoice_id = ?", (inv_id,))
+
+        line_items = extracted.get("line_items", [])
+        for idx, item in enumerate(line_items, 1):
+            item_id = f"item_{inv_id}_{idx}"
+            cur.execute("""
+                INSERT INTO invoice_items
+                (id, invoice_id, line_number, charge_code, description, billed_cents,
+                 expected_cents, discrepancy_cents, finding_status, rule_reference, explanation)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'PENDING', NULL, NULL)
+            """, (
+                item_id, inv_id, idx,
+                item.get("charge_code", "MISC"),
+                item.get("description", "Extracted charge item"),
+                item.get("billed_cents", 0)
+            ))
+
+        record_audit_event(
+            conn, "INVOICE", inv_id, "INVOICE_UPLOADED_AND_EXTRACTED", "AI_INGESTION_SERVICE",
+            {"ai_provider": extracted.get("_ai"), "items_count": len(line_items), "filename": filename}
+        )
+
+    # Run deterministic audit pipeline immediately
+    audit_res = run_invoice_audit(inv_id)
+    audit_res["_ai"] = extracted.get("_ai")
+    audit_res["extracted_invoice"] = extracted
+    return audit_res
+
+@app.get("/api/ai/explain/{invoice_id}")
+def get_ai_explanation(invoice_id: str):
+    """Returns plain-English executive AI summary and breakdown of audit findings."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
+        inv = cur.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found.")
+        invoice = dict(inv)
+
+        cur.execute("""
+            SELECT af.*, ii.explanation, ii.description as item_description
+            FROM audit_findings af
+            LEFT JOIN invoice_items ii ON af.item_id = ii.id
+            WHERE af.invoice_id = ?
+        """, (invoice_id,))
+        findings = [dict(f) for f in cur.fetchall()]
+
+        return ai_service.explain_audit(invoice, findings)
+
+@app.get("/api/ai/provider")
+def get_ai_provider():
+    """Returns active AI provider and supported model list."""
+    return {
+        "active_provider": ai_service.active_provider(),
+        "available_providers": ["GROQ", "GEMINI", "OPENAI", "LOCAL_DETERMINISTIC"],
+    }
+
 # -----------------------------------------------------------------------------
 # 3. EVIDENCE WORKBENCH
 # -----------------------------------------------------------------------------
@@ -458,8 +588,23 @@ def create_dispute_package(req: DisputeGenerateRequest):
         if not findings:
             raise HTTPException(status_code=400, detail="Cannot generate dispute: Invoice has no audit findings or zero discrepancy.")
 
-        # Generate dispute package
-        pkg = generate_dispute_package(invoice, carrier, shipment, findings)
+        # Rank clauses via local BM25 and draft dispute using AI service (or deterministic fallback)
+        rag_engine = TariffRAGEngine(conn)
+        contract = rag_engine.get_contract_for_carrier(invoice["carrier_id"], invoice["invoice_date"])
+        contract_id = contract["id"] if contract else "AGF-MSA-2025-V2"
+        ranked_clauses = rag_engine.rank_clauses_for_findings(contract_id, findings)
+
+        pkg = ai_service.draft_dispute(invoice, carrier, shipment, findings, ranked_clauses)
+
+        # Enforce financial boundary: AI cannot manipulate monetary amounts
+        if not ai_service.verify_ai_financial_integrity(
+            invoice["total_billed_cents"],
+            invoice["approved_payable_cents"],
+            pkg.get("disputed_amount_cents", 0),
+            pkg
+        ):
+            pkg = generate_dispute_package(invoice, carrier, shipment, findings)
+            pkg["_ai"] = "FALLBACK (Financial policy blocked AI monetary alteration)"
         
         # Check if dispute already exists
         cur.execute("SELECT id FROM disputes WHERE invoice_id = ?", (req.invoice_id,))
@@ -538,8 +683,33 @@ def update_dispute_status(dispute_id: str, new_status: str, credit_note_ref: Opt
 # 5. SETTLEMENT & PAYPAL PAYOUTS
 # -----------------------------------------------------------------------------
 @app.post("/api/settlements/authorize")
-def authorize_settlement(req: SettlementAuthorizeRequest):
+def authorize_settlement(
+    req: SettlementAuthorizeRequest,
+    request: Request = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
     """Enforces two-man approval and prepares durable settlement intent."""
+    user_dict = current_user if isinstance(current_user, dict) else None
+    if request:
+        settlement_limiter.check(request, identifier=user_dict.get("email") if user_dict else None)
+
+    first_approver = req.first_approver
+    second_approver = req.second_approver
+
+    # If authenticated user is present, bind identity and enforce authorization
+    if user_dict:
+        if not user_dict.get("can_approve", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"User role '{user_dict.get('role')}' is not authorized to sign off on financial settlements."
+            )
+        first_approver = user_dict["email"]
+        if second_approver and second_approver == first_approver:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Segregation of duties violation: First approver and second approver cannot be the same individual."
+            )
+
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT * FROM invoices WHERE id = ?", (req.invoice_id,))
@@ -552,8 +722,8 @@ def authorize_settlement(req: SettlementAuthorizeRequest):
         # Policy validation
         is_allowed, reason = validate_settlement_authorization(
             invoice=invoice,
-            first_approver=req.first_approver,
-            second_approver=req.second_approver
+            first_approver=first_approver,
+            second_approver=second_approver
         )
         if not is_allowed:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=reason)
@@ -581,10 +751,10 @@ def authorize_settlement(req: SettlementAuthorizeRequest):
             invoice["disputed_amount_cents"],
             invoice["currency"],
             carr_email,
-            req.first_approver,
+            first_approver,
             now_str,
-            req.second_approver,
-            now_str if req.second_approver else None,
+            second_approver,
+            now_str if second_approver else None,
             now_str
         ))
 
@@ -595,8 +765,8 @@ def authorize_settlement(req: SettlementAuthorizeRequest):
             conn, "SETTLEMENT", intent_id, "SETTLEMENT_AUTHORIZED", "FINANCIAL_POLICY",
             {
                 "approved_payable_cents": invoice["approved_payable_cents"],
-                "approver_1": req.first_approver,
-                "approver_2": req.second_approver,
+                "approver_1": first_approver,
+                "approver_2": second_approver,
                 "idempotency_key": idempotency_key
             }
         )
@@ -611,8 +781,15 @@ def authorize_settlement(req: SettlementAuthorizeRequest):
         }
 
 @app.post("/api/settlements/payout")
-def execute_payout(req: SettlementPayoutRequest):
+def execute_payout(
+    req: SettlementPayoutRequest,
+    request: Request = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
     """Executes verified PayPal Payout with strict idempotency and invariants."""
+    user_dict = current_user if isinstance(current_user, dict) else None
+    if request:
+        settlement_limiter.check(request, identifier=user_dict.get("email") if user_dict else None)
     with get_db() as conn:
         cur = conn.cursor()
 
@@ -759,10 +936,25 @@ def execute_payout(req: SettlementPayoutRequest):
 @app.post("/api/webhooks/paypal")
 async def receive_paypal_webhook(request: Request):
     """Authoritative PayPal Webhook listener endpoint with signature check and deduplication."""
-    payload = await request.json()
+    raw_body = await request.body()
+    headers = dict(request.headers)
+
     with get_db() as conn:
         svc = WebhookService(conn)
-        success, msg, data = svc.process_webhook_event(payload, is_simulated=0)
+        if not svc.verify_signature(headers, raw_body, paypal_adapter):
+            record_audit_event(
+                conn, "SECURITY", "WEBHOOK", "UNAUTHENTICATED_WEBHOOK_REJECTED", "GATEWAY",
+                {"reason": "Invalid or missing webhook signature"}
+            )
+            raise HTTPException(status_code=401, detail="Webhook signature verification failed.")
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON in webhook payload.")
+
+        is_simulated = 1 if paypal_adapter.mode() != "LIVE_SANDBOX" else 0
+        success, msg, data = svc.process_webhook_event(payload, is_simulated=is_simulated)
         return {"success": success, "message": msg, "data": data}
 
 @app.post("/api/webhooks/simulate")
@@ -802,18 +994,58 @@ def simulate_webhook_event(req: WebhookSimulateRequest):
             }
         }
 
+        payload_bytes = json.dumps(simulated_payload).encode("utf-8")
+        sim_sig = generate_local_webhook_signature(payload_bytes)
+
         svc = WebhookService(conn)
         success, msg, data = svc.process_webhook_event(simulated_payload, is_simulated=1)
         return {
             "simulated": True,
             "event_id": event_id,
             "event_type": req.event_type,
+            "signature": sim_sig,
             "message": msg,
             "reconciled_data": data
         }
 
 # -----------------------------------------------------------------------------
-# 7. AUDIT TRAIL & AGENT ACTIVITY
+# 7. AUTH & ROLES
+# -----------------------------------------------------------------------------
+@app.get("/api/auth/demo-users")
+def get_demo_users():
+    """Returns available demo user accounts with pre-signed session tokens."""
+    users = []
+    for email, profile in DEMO_USERS.items():
+        token = create_token_for_user(profile["email"], profile["role"], profile["name"])
+        users.append({**profile, "token": token})
+    return users
+
+@app.post("/api/auth/login")
+def login_user(payload: Dict[str, Any]):
+    email = payload.get("email", "").strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required.")
+    if email in DEMO_USERS:
+        profile = DEMO_USERS[email]
+    else:
+        role = payload.get("role", "CLERK").upper()
+        name = payload.get("name", email.split("@")[0].title())
+        profile = {
+            "email": email,
+            "name": name,
+            "role": role,
+            "title": f"Custom {role}",
+            "can_approve": role in ("APPROVER_1", "APPROVER_2", "ADMIN")
+        }
+    token = create_token_for_user(profile["email"], profile["role"], profile["name"])
+    return {"token": token, "user": profile}
+
+@app.get("/api/auth/me")
+def get_current_user_profile(user: Dict[str, Any] = Depends(get_current_user)):
+    return user
+
+# -----------------------------------------------------------------------------
+# 8. AUDIT TRAIL & AGENT ACTIVITY
 # -----------------------------------------------------------------------------
 @app.get("/api/audit-events")
 def list_audit_events(limit: int = 50):
@@ -832,14 +1064,16 @@ def list_audit_events(limit: int = 50):
         return events
 
 # -----------------------------------------------------------------------------
-# 8. SETTINGS & SYSTEM DIAGNOSTICS
+# 9. SETTINGS & SYSTEM DIAGNOSTICS
 # -----------------------------------------------------------------------------
 @app.get("/api/settings")
 def get_settings():
     """Returns safe connection states and system diagnostics."""
     paypal_diag = paypal_adapter.get_mode_diagnostics()
     return {
-        "app_mode": APP_MODE,
+        "app_mode": paypal_adapter.mode(),
+        "paypal_mode": paypal_adapter.mode(),
+        "paypal_client_id_masked": paypal_diag.get("client_id_masked", ""),
         "paypal": paypal_diag,
         "database": {
             "engine": "SQLite 3",
@@ -848,10 +1082,52 @@ def get_settings():
             "status": "HEALTHY"
         },
         "ai_engine": {
-            "provider": "LOCAL_DETERMINISTIC_TARIFF_RAG",
+            "active_provider": ai_service.active_provider(),
             "confidence_model": "EXACT_DECIMAL_RULE_EVALUATOR",
             "status": "OPERATIONAL"
         }
+    }
+
+@app.post("/api/settings")
+def update_settings(req: SettingsUpdateSchema):
+    """Updates in-memory runtime credentials without disk persistence."""
+    from backend.paypal_adapter import set_runtime_paypal_credentials
+    from backend.ai_service import set_runtime_keys
+
+    set_runtime_paypal_credentials(
+        client_id=req.paypal_client_id,
+        client_secret=req.paypal_client_secret,
+        webhook_id=req.paypal_webhook_id,
+        failure_mode=req.simulate_failure_mode,
+        forced_mode=req.mode,
+    )
+    set_runtime_keys(
+        provider=req.ai_provider,
+        groq_key=req.groq_api_key,
+        gemini_key=req.gemini_api_key,
+        openai_key=req.openai_api_key,
+    )
+    return {
+        "status": "SUCCESS",
+        "message": "Settings successfully updated in memory.",
+        "settings": get_settings()
+    }
+
+@app.post("/api/settings/test-connection")
+def test_connection():
+    """Tests gateway connectivity for PayPal Sandbox."""
+    return paypal_adapter.test_connection()
+
+@app.get("/healthz")
+def health_check():
+    """Application health check endpoint for cloud and Docker deployments."""
+    with get_db() as conn:
+        conn.execute("SELECT 1").fetchone()
+    return {
+        "status": "HEALTHY",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "paypal_mode": paypal_adapter.mode(),
+        "ai_provider": ai_service.active_provider(),
     }
 
 @app.post("/api/settings/reset-demo")

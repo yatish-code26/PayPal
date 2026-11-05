@@ -88,7 +88,7 @@ const WorkbenchView = {
 
         <!-- 2-Column Split: Extracted Charges vs Contract/Telematics Evidence -->
         <div class="workbench-grid">
-          <!-- Left: Billed Line Items -->
+          <!-- Left: Billed Line Items & Variance Waterfall -->
           <div class="panel-card">
             <div class="panel-header">
               <span class="panel-title">
@@ -130,24 +130,64 @@ const WorkbenchView = {
               </table>
             </div>
 
+            <!-- Variance Waterfall Visual Component -->
+            <div class="waterfall-container">
+              <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px;">
+                VARIANCE WATERFALL BREAKDOWN
+              </div>
+              <div class="waterfall-row">
+                <span>Gross Billed Total</span>
+                <div class="waterfall-bar-wrap"><div class="waterfall-bar-fill" style="width: 100%; background-color: var(--text-primary);"></div></div>
+                <span class="mono">$${totalBilled}</span>
+              </div>
+              ${(invoice.findings || []).map(f => `
+                <div class="waterfall-row" style="color: var(--status-danger);">
+                  <span>Discrepancy: ${f.title || f.clause_citation}</span>
+                  <div class="waterfall-bar-wrap"><div class="waterfall-bar-fill" style="width: ${Math.min(100, Math.round((f.variance_cents / (invoice.total_billed_cents || 1)) * 100))}%; background-color: var(--status-danger);"></div></div>
+                  <span class="mono">-$${(f.variance_cents / 100).toFixed(2)}</span>
+                </div>
+              `).join("")}
+              <div class="waterfall-row" style="color: var(--accent-cyan); font-weight: 700;">
+                <span>Net Legitimate Payable</span>
+                <div class="waterfall-bar-wrap"><div class="waterfall-bar-fill" style="width: ${Math.min(100, Math.round((invoice.approved_payable_cents / (invoice.total_billed_cents || 1)) * 100))}%; background-color: var(--accent-cyan);"></div></div>
+                <span class="mono">$${payable}</span>
+              </div>
+            </div>
+
             <div style="margin-top: 16px; padding: 12px; background-color: var(--bg-primary); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-secondary); display: flex; justify-content: space-between; align-items: center;">
               <span>Deterministic Accounting Invariant: <strong>$${payable} + $${disputed} = $${totalBilled}</strong></span>
               <span class="badge badge-clean">Verified Cents Equality</span>
             </div>
           </div>
 
-          <!-- Right: Contract Citations, Telematics & Mathematical Calculation Steps -->
+          <!-- Right: Contract Citations, Telematics, & AI Natural-Language Explanations -->
           <div class="panel-card">
             <div class="panel-header">
               <span class="panel-title">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                Contractual Tariff Authority & Telematics Proof
+                Contractual Tariff Authority & AI Explanation
               </span>
-              <span class="badge badge-info">Source Citations</span>
+              <span class="badge badge-info">Evidence Intelligence</span>
+            </div>
+
+            <!-- AI Explanation Callout Card -->
+            <div class="ai-explanation-card">
+              <div class="ai-explanation-header">
+                <span style="font-weight: 700; font-size: 13px; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                  <span>Autonomous AI Audit Explanation</span>
+                  <span class="ai-provider-pill" id="ai-card-provider">AI</span>
+                </span>
+                <button class="btn btn-secondary btn-sm" id="btn-fetch-ai-explain" onclick="WorkbenchView.loadAiExplanation('${invoice.id}')">
+                  Explain With AI
+                </button>
+              </div>
+              <div id="ai-explain-body" style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
+                Click "Explain With AI" to query the LLM engine for a plain-English narrative of contract violations and financial impact.
+              </div>
             </div>
 
             <!-- Telematics Physical Evidence Card -->
-            <div style="background-color: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 16px;">
+            <div style="background-color: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 14px; margin-top: 16px; margin-bottom: 16px;">
               <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--status-info); margin-bottom: 6px;">
                 TELEMATICS & FACILITY TELEMETRY LOGS
               </div>
@@ -201,8 +241,37 @@ const WorkbenchView = {
           </div>
         </div>
       `;
+
+      // Auto-load AI explanation if audited
+      if (isAudited && (invoice.findings || []).length > 0) {
+        this.loadAiExplanation(invoice.id);
+      }
     } catch (e) {
       container.innerHTML = `<div style="padding: 40px; color: var(--status-danger);">Failed loading evidence workbench: ${e.message}</div>`;
+    }
+  },
+
+  async loadAiExplanation(invoiceId) {
+    const bodyEl = document.getElementById("ai-explain-body");
+    const pillEl = document.getElementById("ai-card-provider");
+    if (!bodyEl) return;
+
+    bodyEl.innerHTML = `<span class="skeleton" style="display:inline-block; width:100%; height:40px;"></span>`;
+
+    try {
+      const res = await API.getAiExplanation(invoiceId);
+      if (pillEl) pillEl.textContent = res.provider || "AI";
+      bodyEl.innerHTML = `
+        <p style="margin-bottom: 8px; color: var(--text-primary); font-weight: 500;">
+          ${res.plain_english_summary}
+        </p>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--border-subtle); padding-top: 6px; font-size: 11px; color: var(--text-muted);">
+          <span>Confidence: <strong style="color: var(--accent-cyan);">${Math.round((res.confidence_score || 0.95) * 100)}%</strong></span>
+          <span>Policy Rule: <em>AI outputs cannot modify monetary amounts</em></span>
+        </div>
+      `;
+    } catch (e) {
+      bodyEl.innerHTML = `<span style="color: var(--status-warning);">AI Summary Unavailable: ${e.message}</span>`;
     }
   }
 };

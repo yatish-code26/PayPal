@@ -1,9 +1,69 @@
 """FreightGuard Tariff Intelligence & Contract RAG Engine
 Provides indexed retrieval of contracted clauses, rate schedules, and telematics evidence.
 Preserves verifiable source citations, clause sections, and contract effective periods.
+Includes a local, dependency-free BM25 retrieval ranker for grounding AI dispute generation.
 """
 from typing import Dict, Any, List, Optional
 import json
+import re
+import math
+from collections import Counter
+
+
+def _tokenize(text: str) -> List[str]:
+    """Simple alphanumeric tokenizer for local BM25 ranking."""
+    return re.findall(r"\w+", (text or "").lower())
+
+
+def bm25_rank(documents: List[Dict[str, Any]], query: str, k1: float = 1.5, b: float = 0.75) -> List[Dict[str, Any]]:
+    """Ranks a list of clause dictionaries against a query string using BM25.
+    Returns documents with an added 'bm25_score' field, sorted descending by score.
+    """
+    if not documents:
+        return []
+
+    query_tokens = _tokenize(query)
+    if not query_tokens:
+        return documents
+
+    N = len(documents)
+    doc_token_counts = []
+    doc_lens = []
+    df = Counter()
+
+    for doc in documents:
+        # Combine text representation of rule
+        content = f"{doc.get('rule_code', '')} {doc.get('clause_reference', '')} {doc.get('category', '')} {doc.get('rule_description', '')}"
+        tokens = _tokenize(content)
+        counts = Counter(tokens)
+        doc_token_counts.append(counts)
+        doc_lens.append(len(tokens))
+        for word in counts.keys():
+            df[word] += 1
+
+    avgdl = sum(doc_lens) / max(N, 1)
+
+    scored_docs = []
+    for idx, doc in enumerate(documents):
+        counts = doc_token_counts[idx]
+        dl = doc_lens[idx]
+        score = 0.0
+        for q in query_tokens:
+            if q in counts:
+                # Standard BM25 idf & tf formula
+                n_q = df[q]
+                idf = math.log((N - n_q + 0.5) / (n_q + 0.5) + 1.0)
+                tf = counts[q]
+                denom = tf + k1 * (1.0 - b + b * (dl / max(avgdl, 1e-6)))
+                score += idf * ((tf * (k1 + 1.0)) / max(denom, 1e-6))
+
+        doc_copy = dict(doc)
+        doc_copy["bm25_score"] = round(score, 4)
+        scored_docs.append(doc_copy)
+
+    scored_docs.sort(key=lambda d: d["bm25_score"], reverse=True)
+    return scored_docs
+
 
 class TariffRAGEngine:
     """Deterministic, indexed tariff retrieval engine."""
@@ -109,3 +169,19 @@ class TariffRAGEngine:
             "contracted_rate_cents": 0,
             "rule_code": "UNCONTRACTED"
         }
+
+    def rank_clauses_for_findings(self, contract_id: str, findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Retrieves and ranks contract clauses against audit findings using local BM25 ranking."""
+        rules = self.get_tariff_rules_for_contract(contract_id)
+        if not findings or not rules:
+            return rules
+
+        # Construct search query from findings
+        query_parts = []
+        for f in findings:
+            query_parts.append(f.get("finding_type", ""))
+            query_parts.append(f.get("clause_citation", ""))
+            query_parts.append(f.get("explanation", ""))
+        query = " ".join(query_parts)
+
+        return bm25_rank(rules, query)

@@ -2,6 +2,11 @@
 ### Autonomous Freight Invoice Audit, Evidence Intelligence & PayPal Settlement
 *Built for the PayPal AI Hackathon*
 
+[![Tests](https://img.shields.io/badge/tests-21%20passed-success)](https://github.com/yatish-code26/PayPal.git)
+[![PayPal](https://img.shields.io/badge/PayPal%20Developer-Payouts%20API%20Sandbox-003087)](https://developer.paypal.com/)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 ---
 
 ## 1. Executive Summary & Product Vision
@@ -12,19 +17,19 @@ The central product guarantee:
 > *"Every freight charge must be explainable, every discrepancy must be evidenced, and every payout must pass deterministic financial controls."*
 
 FreightGuard replaces manual, error-prone spot-checking with an end-to-end **Evidence-to-Settlement Control Loop**:
-1. **Invoice Ingestion & Extraction**: Line-item breakdown of linehauls, fuel surcharges, detention, and accessorials.
-2. **Contract Intelligence (Tariff RAG)**: Indexed retrieval of Master Service Agreement (MSA) clauses, lane tariffs, and fuel index formulas.
+1. **Invoice Ingestion & Extraction**: Line-item breakdown of linehauls, fuel surcharges, detention, and accessorials from PDFs or raw text.
+2. **Contract Intelligence (BM25 Clause Ranking)**: Relevance-ranked retrieval of Master Service Agreement (MSA) clauses, lane tariffs, and fuel index formulas.
 3. **Telematics & Dock Verification**: Proof of delivery, bill of lading (BOL) profiles, and GPS geofence dwell logs.
 4. **Deterministic Policy Validation**: Exact decimal cents arithmetic isolating verified payable balances from uncontracted charges.
-5. **Carrier Dispute Intelligence**: Automated drafting of formal commercial dispute letters grounded in contract citations.
+5. **AI Dispute Intelligence & Synthesis**: Automated drafting of formal commercial dispute letters grounded in contract citations with Groq, Gemini, or OpenAI.
 6. **Controlled PayPal Payout**: Two-man segregation of duties authorization and execution via PayPal Developer Platform Payouts (`POST /v1/payments/payouts`).
-7. **Webhook-Driven Reconciliation**: Asynchronous state synchronization, idempotent replay protection, and audit logging.
+7. **Webhook-Driven Cryptographic Reconciliation**: Asynchronous state synchronization, idempotent replay protection, and append-only audit logging.
 
 ---
 
-## 2. Signature Demonstration Scenario: The $2,180 Overcharge
+## 2. The $2,180 Signature Demonstration Scenario
 
-Carrier: **Apex Global Freight Logistics** (Fictional Carrier)  
+Carrier: **Apex Global Freight Logistics**  
 Invoice: `#INV-2025-88419` | Shipment: `#SH-884192` (BOL `#BOL-99214`)  
 Contract: `AGF-MSA-2025-V2` | Lane: Chicago, IL (ORD) &rarr; Dallas, TX (DFW), 53ft Dry Van
 
@@ -41,118 +46,154 @@ Every dollar, cent, and calculation step is verified with zero floating-point ar
 
 ---
 
-## 3. System Architecture & Tech Stack
+## 3. Architecture & Control Flow
 
-```
-                          ┌─────────────────────────────────────┐
-                          │     FreightGuard Executive UI       │
-                          │   (Vanilla ES6, HTML5, Modern CSS)   │
-                          └──────────────────┬──────────────────┘
-                                             │ REST / JSON
-                                             ▼
-                          ┌─────────────────────────────────────┐
-                          │      FastAPI Application Server     │
-                          │        (Python 3.14.2 / Uvicorn)    │
-                          └──────┬───────────┬────────────┬─────┘
-                                 │           │            │
-            ┌────────────────────┘           │            └───────────────────┐
-            ▼                                ▼                                ▼
-┌───────────────────────┐        ┌───────────────────────┐        ┌───────────────────────┐
-│ Tariff RAG & Evidence │        │ Deterministic Policy  │        │ PayPal Payout Adapter │
-│  - Contract Clauses   │        │  - Cents Arithmetic   │        │  - POST /v1/payments/ │
-│  - Telematics & BOL   │        │  - Invariant Checks   │        │    payouts            │
-│  - DOE Fuel Formulas  │        │  - Dual Signoff Guard │        │  - Webhook Listener   │
-└───────────┬───────────┘        └───────────┬───────────┘        └───────────┬───────────┘
-            │                                │                                │
-            └────────────────────────────────┼────────────────────────────────┘
-                                             ▼
-                          ┌─────────────────────────────────────┐
-                          │           SQLite Database           │
-                          │   (WAL Mode + Foreign Key Enforce)  │
-                          └─────────────────────────────────────┘
-```
+```mermaid
+flowchart TD
+    subgraph INGESTION["1. Ingestion & Retrieval"]
+        A["Carrier Freight Bill (PDF / Text)"] --> B["Hybrid Extraction Engine\n(PyPDF + LLM / RegEx)"]
+        B --> C["Contract Clause RAG\n(BM25 Search & Telematics)"]
+    end
 
-- **Backend**: Python 3.14.2, FastAPI 0.136.1, Uvicorn 0.47.0, Pydantic 2.13.4.
-- **Database**: SQLite 3 with Write-Ahead Logging (WAL) and strict foreign keys.
-- **Frontend**: Vanilla ES6, Semantic HTML5, and CSS3. Dark graphite fintech palette (`#0a0d14`), electric-cyan accents (`#00e5ff`), monospace financial numbers, and interactive SVG visualizers. Zero external CDN dependencies; 100% self-contained.
-- **PayPal Integration**: Official PayPal Payouts API client (`POST /v1/payments/payouts`), idempotency key management (`PayPal-Request-Id`), and webhook state reconciler.
+    subgraph POLICY["2. Deterministic Financial Policy"]
+        C --> D["Exact Decimal Cents Engine\n(DOE Diesel Peg + Tariff Rules)"]
+        D --> E{"Invariant Check"}
+        E -->|"Violation Detected"| F["Flagged Discrepancy\n($2,180.00 Held)"]
+        E -->|"Contract Valid"| G["Approved Payable\n($3,342.00 Authorized)"]
+    end
+
+    subgraph AI_LAYER["3. Evidence Intelligence (AI Layer)"]
+        F --> H["Unified LLM Client\n(Groq / Gemini / OpenAI)"]
+        H --> I["Evidence-Backed Dispute Letter\n(With Contract Section Citations)"]
+    end
+
+    subgraph SETTLEMENT["4. Controlled Settlement & PayPal Payouts"]
+        G --> J["Two-Man Role Authorization\n(Sarah Chen + David Ross)"]
+        J --> K["PayPal Payouts Adapter\n(POST /v1/payments/payouts)"]
+        K --> L["PayPal-Request-Id\nIdempotency Key"]
+        L --> M["Carrier PayPal Account"]
+    end
+
+    subgraph RECONCILIATION["5. Cryptographic Reconciliation"]
+        M -.-> N["PayPal Webhook Event\n(PAYMENT.PAYOUTS-ITEM.SUCCEEDED)"]
+        N --> O["Signature Verification\n(HMAC / PayPal Cert API)"]
+        O --> P["Event ID Deduplication"]
+        P --> Q["State: RECONCILED"]
+        Q --> R["Immutable Audit Trail\n(SQLite WAL DB)"]
+    end
+```
 
 ---
 
-## 4. Deterministic Financial Invariants
+## 4. Key Design Principles & Security Model
 
-The financial policy engine enforces strict system invariants:
-1. **Accounting Equality**: `total_billed_cents == approved_payable_cents + disputed_amount_cents + held_amount_cents`.
-2. **No Over-Payment**: Approved payable amount cannot exceed verified contractual tariff.
-3. **No Unapproved Payments**: An un-audited or pending invoice cannot be staged for payment.
-4. **Prohibition of Blocked Invoices**: Invoices flagged with fatal anomalies (such as duplicate shipments) are permanently frozen.
-5. **Idempotency Guarantee**: Submitting identical idempotency keys returns the existing payout record without re-charging.
-6. **Two-Man Authorization**: Payouts require distinct primary and secondary approvers to satisfy segregation of duties.
+### A. The Golden Rule: Zero API Key Requirement
+The application runs **100% offline out-of-the-box** using high-fidelity local simulations. No external account or credit card is required to inspect, test, or evaluate the application. When live API keys are provided in `.env` or supplied via the UI settings, the system seamlessly transitions into `LIVE_SANDBOX` mode.
+
+### B. "AI Never Decides Money" Policy Guard
+Large Language Models draft commercial correspondence and synthesize explanations, but **monetary calculations are 100% deterministic**. Any LLM output that attempts to adjust amounts or override calculations is intercepted and rejected by backend policy invariants.
+
+### C. Financial Invariants
+1. **Zero Float Arithmetic:** All monetary math is stored and calculated in integer cents.
+2. **Reconciliation Equality:** `Total Billed == Approved Payable + Disputed Variance`.
+3. **Segregation of Duties (Two-Man Signoff):** Payouts require dual authorization. The same user cannot sign off as both Approver 1 and Approver 2.
+4. **Rate Limiting & Anti-Replay:** Sliding-window rate limiters protect financial endpoints. Webhooks enforce replay deduplication.
 
 ---
 
-## 5. Quickstart & Installation
+## 5. Quickstart Guide
 
-### Requirements
-- Python 3.10+ (Verified on Python 3.14.2)
-- Modern Web Browser (Chrome, Edge, Firefox, Safari)
+### Prerequisites
+- Python 3.11, 3.12, or 3.14
+- Git
 
-### Step 1: Start the Local Application
-```powershell
-python run_server.py
+### Installation & Run
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yatish-code26/PayPal.git
+   cd PayPal
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the test suite (Verify 21 tests pass):**
+   ```bash
+   python -m pytest -v
+   ```
+
+4. **Start the application:**
+   ```bash
+   python run_server.py
+   ```
+   *Windows PowerShell shortcut:*
+   ```powershell
+   .\run.ps1
+   ```
+
+5. **Open your browser:**
+   Navigate to [http://localhost:8000](http://localhost:8000).
+
+---
+
+## 6. Docker & Container Deployment
+
+To launch via Docker:
+```bash
+docker build -t freightguard .
+docker run -p 8000:8000 freightguard
 ```
-The server will start at: **`http://127.0.0.1:8000`**
 
-### Step 2: Open in Browser
-Open `http://127.0.0.1:8000` in your web browser.
+Or using Docker Compose:
+```bash
+docker compose up -d
+```
 
-### Step 3: Run Automated Test Suite
-```powershell
+---
+
+## 7. Key REST API Endpoints
+
+| Method | Endpoint | Description |
+|:---|:---|:---|
+| `GET` | `/healthz` | System health and active adapter mode check |
+| `GET` | `/api/stats` | Executive control tower metrics (billed, payable, disputed) |
+| `GET` | `/api/invoices` | Filtered invoice queue |
+| `POST` | `/api/invoices/upload` | Upload PDF or text freight invoice for hybrid extraction |
+| `POST` | `/api/invoices/{id}/audit` | Run autonomous deterministic contract audit |
+| `GET` | `/api/ai/explain/{id}` | Plain-English AI explanation of audit findings |
+| `POST` | `/api/disputes/generate` | Generate formal dispute letter with BM25 contract citations |
+| `POST` | `/api/settlements/authorize` | Enforce two-man signoff and create settlement intent |
+| `POST` | `/api/settlements/payout` | Execute PayPal Sandbox Payout with idempotency |
+| `POST` | `/api/webhooks/paypal` | Authoritative PayPal webhook listener with signature verification |
+| `GET` | `/api/settings` | Read safe diagnostic configuration and masked keys |
+| `POST` | `/api/settings` | In-memory runtime credential configuration |
+
+---
+
+## 8. Verification & Test Suite
+
+The test suite thoroughly verifies all security gates, financial invariants, and PayPal workflows:
+```bash
 python -m pytest -v
 ```
-All 10 test cases run in under 1 second, verifying cents arithmetic, fuel surcharge formulas, signature audit reconciliation, settlement authorization rules, PayPal idempotency, and webhook deduplication.
+
+Expected output:
+```
+tests/test_ai_service.py ......................... PASSED [ 23%]
+tests/test_invoices_audit.py ..................... PASSED [ 33%]
+tests/test_policy_engine.py ...................... PASSED [ 52%]
+tests/test_security_hardening.py ................. PASSED [ 80%]
+tests/test_settlement_invariants.py .............. PASSED [ 95%]
+tests/test_webhooks.py ........................... PASSED [100%]
+
+============================= 21 passed in 1.33s ==============================
+```
 
 ---
 
-## 6. Three-Minute Judge Demonstration Walkthrough
+## 9. License
 
-1. **0:00 - 0:30: The Business Problem & Control Tower**
-   - Open `http://127.0.0.1:8000`. Show the Executive Control Tower metrics ($19,734.00 total billed, $11,392.00 verified payable).
-   - Point out invoice `#INV-2025-88419` from Apex Global Freight Logistics billed at $5,522.00.
-2. **0:30 - 1:00: Autonomous Audit**
-   - Click **"Execute $2,180 Signature Audit"** in the top header.
-   - The audit engine flags 4 uncontracted charges totaling **$2,180.00**, isolating the legitimate payable balance of **$3,342.00**.
-3. **1:00 - 1:45: Deep Evidence Traceability**
-   - Click **"Workbench"** to enter the Evidence Workbench.
-   - Inspect the side-by-side comparison:
-     - Item 1: Off-tariff spot rate vs Clause 3.1 contracted flat lane rate ($600 overcharge).
-     - Item 2: EIA/DOE Diesel fuel surcharge formula (12% contracted vs 21% billed = $380 overcharge).
-     - Item 3: Unauthorized Liftgate vs BOL proof of dock-to-dock forklift facility ($350 overcharge).
-     - Item 5: Prohibited secondary congestion fee duplicating dwell time ($850 duplicate).
-4. **1:45 - 2:15: Dispute Generation**
-   - Navigate to **"Dispute Center"**.
-   - Review the generated formal commercial dispute letter citing contract references, calculation steps, and carrier response deadline.
-   - Click **"Simulate Carrier Delivery"**.
-5. **2:15 - 2:45: Financial Invariant Defense & Settlement**
-   - Navigate to **"Settlement Center"**.
-   - Click **"Test Pay Blocked Duplicate"** to demonstrate that the policy engine blocks unauthorized or corrupt payouts (HTTP 403 Forbidden).
-   - Enter Dual Approvers (`sarah.chen@shipper.internal` and `david.ross@shipper.internal`) and click **"Authorize Settlement Intent"**.
-   - Click **"Execute PayPal Sandbox Payout ($3,342.00)"**.
-   - Inspect the returned PayPal Batch ID (`PAYPAL-SBX-BATCH-...`) and item status.
-6. **2:45 - 3:00: Webhook Reconciliation**
-   - Under the Webhook Simulator, click **"Simulate Item Succeeded"**.
-   - Observe the final state transition: Invoice status becomes **RECONCILED**, and audit trail records the event.
-
----
-
-## 7. Operational Modes & Honesty Statement
-
-FreightGuard distinguishes between operational modes:
-- **`LOCAL_DEMO` (Default)**: 100% offline, deterministic local simulation. Generates realistic PayPal batch/item IDs and response payloads labeled as `Local Sandbox Adapter (Simulation - No External Network)`. Requires zero external internet or credentials.
-- **`LIVE_SANDBOX`**: Connects to `https://api-m.sandbox.paypal.com` using server-side OAuth (`client_id` and `client_secret`). Only activated when explicitly configured with user authorization.
-
----
-
-## 8. License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

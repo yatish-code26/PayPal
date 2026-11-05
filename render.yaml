@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: freightguard
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: FREIGHTGUARD_MODE
+        value: LOCAL_DEMO
+      - key: AI_PROVIDER
+        value: LOCAL_DETERMINISTIC
+    healthCheckPath: /healthz
