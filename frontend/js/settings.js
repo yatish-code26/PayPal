@@ -1,7 +1,11 @@
 /**
- * Settings & Integrations View Controller
- * Runtime configuration for AI providers, PayPal Sandbox credentials,
- * connection tests, failure simulation, and safe masked credential viewing.
+ * Settings & System Diagnostics View Controller
+ * - Read-only status cards by default:
+ *     "AI Assistant: built-in"
+ *     "Payments: built-in sandbox"
+ * - Sample data reset behind confirmation dialog
+ * - Collapsed "Advanced > Connect live services (optional)" section (closed by default)
+ *     with masked inputs, memory-only storage, and "Test connection" button.
  */
 const SettingsView = {
   async init() {
@@ -16,164 +20,161 @@ const SettingsView = {
     try {
       const diag = await API.getSettings();
 
+      const aiModeLabel = diag.ai_engine.active_provider === "LOCAL_DETERMINISTIC" 
+        ? "Built-in (Zero API Key)" 
+        : `Live (${diag.ai_engine.active_provider})`;
+
+      const paypalModeLabel = diag.paypal.is_simulated 
+        ? "Built-in Sandbox" 
+        : "Live PayPal Sandbox";
+
       container.innerHTML = `
-        <div class="workbench-grid" style="margin-bottom: 24px;">
-          <!-- PayPal Sandbox Card -->
-          <div class="panel-card">
-            <div class="panel-header">
-              <span class="panel-title">
+        <!-- Status Overview: Read-Only by Default -->
+        <div class="workbench-split-grid" style="margin-bottom: 24px;">
+          <!-- Payments Gateway Status Card -->
+          <div class="card">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+              <span style="font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
-                PayPal Developer Platform Integration
+                Payments Status
               </span>
-              <span class="badge ${diag.paypal.is_simulated ? 'badge-info' : 'badge-clean'}">
-                ${diag.paypal.is_simulated ? 'Offline Simulator' : 'Live Sandbox'}
+              <span class="badge ${diag.paypal.is_simulated ? 'badge-neutral' : 'badge-clean'}">
+                ${paypalModeLabel}
               </span>
             </div>
             
             <div style="font-size: 13px; line-height: 1.8;">
               <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding: 8px 0;">
-                <span style="color: var(--text-muted);">Active Mode:</span>
-                <strong style="color: var(--accent-cyan);">${diag.paypal.mode}</strong>
+                <span style="color: var(--text-muted);">Payments Gateway:</span>
+                <strong style="color: var(--accent-primary);">${paypalModeLabel}</strong>
               </div>
               <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding: 8px 0;">
-                <span style="color: var(--text-muted);">PayPal Sandbox Endpoint:</span>
-                <span class="mono">${diag.paypal.base_url}</span>
+                <span style="color: var(--text-muted);">Sandbox Endpoint:</span>
+                <span class="mono">${diag.paypal.base_url || 'https://api-m.sandbox.paypal.com'}</span>
               </div>
               <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding: 8px 0;">
-                <span style="color: var(--text-muted);">Client ID (Masked):</span>
-                <span class="mono">${diag.paypal.client_id_masked || 'None (Using Local Demo)'}</span>
-              </div>
-              <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding: 8px 0;">
-                <span style="color: var(--text-muted);">Client Secret:</span>
-                <span>${diag.paypal.client_secret_configured ? '<span class="badge badge-clean">Configured (In-Memory/Env)</span>' : '<span class="badge badge-info">Offline Demo Active</span>'}</span>
+                <span style="color: var(--text-muted);">Client ID:</span>
+                <span class="mono">${diag.paypal.client_id_masked || 'Built-in Sandbox Default'}</span>
               </div>
               <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-                <span style="color: var(--text-muted);">Webhook ID:</span>
-                <span class="mono">${diag.paypal.webhook_id_configured ? '<span class="badge badge-clean">Configured</span>' : '<span class="badge badge-info">Local HMAC Active</span>'}</span>
+                <span style="color: var(--text-muted);">Webhook Verification:</span>
+                <span>${diag.paypal.webhook_id_configured ? '<span class="badge badge-clean">Live Cert API</span>' : '<span class="badge badge-neutral">Built-in HMAC</span>'}</span>
               </div>
             </div>
           </div>
 
-          <!-- AI & Deterministic Engine Card -->
-          <div class="panel-card">
-            <div class="panel-header">
-              <span class="panel-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                AI & Deterministic Policy Engine
+          <!-- AI Assistant Status Card -->
+          <div class="card">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+              <span style="font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                AI Assistant Status
               </span>
-              <span class="badge badge-clean">Operational</span>
+              <span class="badge ${diag.ai_engine.active_provider === 'LOCAL_DETERMINISTIC' ? 'badge-neutral' : 'badge-clean'}">
+                ${aiModeLabel}
+              </span>
             </div>
 
             <div style="font-size: 13px; line-height: 1.8;">
               <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding: 8px 0;">
-                <span style="color: var(--text-muted);">Active Provider:</span>
-                <strong style="color: var(--accent-cyan);">${diag.ai_engine.active_provider}</strong>
+                <span style="color: var(--text-muted);">AI Assistant:</span>
+                <strong style="color: var(--status-success);">${aiModeLabel}</strong>
               </div>
               <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding: 8px 0;">
-                <span style="color: var(--text-muted);">Financial Rule:</span>
-                <strong style="color: var(--status-success);">AI Never Decides Money (Policy Gate)</strong>
+                <span style="color: var(--text-muted);">Financial Protection:</span>
+                <strong style="color: var(--status-success);">AI Never Decides Money</strong>
               </div>
               <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); padding: 8px 0;">
-                <span style="color: var(--text-muted);">Contract RAG Search:</span>
-                <span class="badge badge-info">BM25 Ranked Clause Matching</span>
+                <span style="color: var(--text-muted);">Contract Retrieval:</span>
+                <span class="badge badge-clean">BM25 Clause Ranking</span>
               </div>
               <div style="display: flex; justify-content: space-between; padding: 8px 0;">
-                <span style="color: var(--text-muted);">Database Engine:</span>
-                <span class="mono">${diag.database.engine} (WAL Mode + Foreign Keys)</span>
+                <span style="color: var(--text-muted);">Database:</span>
+                <span class="mono">SQLite 3 (WAL Mode &bull; Healthy)</span>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Runtime Configuration Drawer Card -->
-        <div class="panel-card" style="margin-bottom: 24px;">
-          <div class="panel-header">
-            <span class="panel-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-              Runtime Credentials & Mode Configuration (Kept in Memory)
-            </span>
-            <span class="badge badge-info">Zero Disk Persistence</span>
-          </div>
+        <!-- Collapsed Section: Advanced Live Credentials (Optional, Closed by Default) -->
+        <div class="card" style="margin-bottom: 24px;">
+          <details style="cursor: pointer;">
+            <summary style="font-weight: 700; font-size: 14px; color: var(--text-primary); outline: none; user-select: none;">
+              Advanced: Connect live services (optional)
+            </summary>
 
-          <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
-            Enter your live PayPal Sandbox credentials or model API keys below for live evaluation. Keys are held in memory only and never written to disk or logs. Leaving these blank preserves the safe offline simulation mode.
-          </p>
+            <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-subtle); font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
+              <p style="margin-bottom: 16px;">
+                FreightGuard operates out-of-the-box with zero API keys. To connect live PayPal Sandbox accounts or custom LLM providers, enter credentials below. Credentials are held in volatile memory only and never written to disk.
+              </p>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-            <div>
-              <div class="form-group">
-                <label class="form-label">AI Model Provider</label>
-                <select id="cfg-ai-provider" class="form-select">
-                  <option value="LOCAL_DETERMINISTIC" ${diag.ai_engine.active_provider === 'LOCAL_DETERMINISTIC' ? 'selected' : ''}>LOCAL_DETERMINISTIC (Zero API Key)</option>
-                  <option value="GROQ" ${diag.ai_engine.active_provider === 'GROQ' ? 'selected' : ''}>GROQ (llama-3.3-70b-versatile)</option>
-                  <option value="GEMINI" ${diag.ai_engine.active_provider === 'GEMINI' ? 'selected' : ''}>GEMINI (gemini-2.0-flash)</option>
-                  <option value="OPENAI" ${diag.ai_engine.active_provider === 'OPENAI' ? 'selected' : ''}>OPENAI (gpt-4o-mini)</option>
-                </select>
+              <div class="workbench-split-grid" style="margin-bottom: 16px;">
+                <div>
+                  <div style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">AI Provider</label>
+                    <select id="cfg-ai-provider" class="form-select" style="width: 100%;">
+                      <option value="LOCAL_DETERMINISTIC" ${diag.ai_engine.active_provider === 'LOCAL_DETERMINISTIC' ? 'selected' : ''}>Built-in (Zero API Key)</option>
+                      <option value="GROQ" ${diag.ai_engine.active_provider === 'GROQ' ? 'selected' : ''}>Groq (llama-3.3-70b-versatile)</option>
+                      <option value="GEMINI" ${diag.ai_engine.active_provider === 'GEMINI' ? 'selected' : ''}>Gemini (gemini-2.0-flash)</option>
+                      <option value="OPENAI" ${diag.ai_engine.active_provider === 'OPENAI' ? 'selected' : ''}>OpenAI (gpt-4o-mini)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">API Key (Groq / Gemini / OpenAI)</label>
+                    <input type="password" id="cfg-ai-key" class="form-input mono" style="width: 100%;" placeholder="Enter key (or leave empty for built-in)">
+                  </div>
+                </div>
+
+                <div>
+                  <div style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">PayPal Sandbox Client ID</label>
+                    <input type="text" id="cfg-paypal-client-id" class="form-input mono" style="width: 100%;" placeholder="e.g. A21AAJ... (or leave empty)">
+                  </div>
+
+                  <div style="margin-bottom: 12px;">
+                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">PayPal Sandbox Client Secret</label>
+                    <input type="password" id="cfg-paypal-client-secret" class="form-input mono" style="width: 100%;" placeholder="Enter secret (masked)">
+                  </div>
+
+                  <div>
+                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">PayPal Webhook ID (Optional)</label>
+                    <input type="text" id="cfg-paypal-webhook-id" class="form-input mono" style="width: 100%;" placeholder="e.g. 8W... (for live signature check)">
+                  </div>
+                </div>
               </div>
 
-              <div class="form-group">
-                <label class="form-label">AI Provider API Key (Groq / Gemini / OpenAI)</label>
-                <input type="password" id="cfg-ai-key" class="form-input mono" placeholder="Enter key (leave blank to use env or local simulator)">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">PayPal Simulator Failure Mode (Demo Toggle)</label>
-                <select id="cfg-failure-mode" class="form-select">
-                  <option value="">Normal Operation (Successful Payouts)</option>
-                  <option value="UNCLAIMED">Simulate UNCLAIMED Payout Item</option>
-                  <option value="FAILED">Simulate FAILED Payout Item</option>
-                  <option value="BLOCKED">Simulate BLOCKED Payout Item</option>
-                </select>
+              <div style="display: flex; gap: 10px;">
+                <button class="btn btn-primary btn-sm" onclick="SettingsView.saveSettings()">
+                  Apply Credentials (Memory Only)
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="SettingsView.testConnection()">
+                  Test Connection
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="SettingsView.clearCredentials()">
+                  Revert to Built-in
+                </button>
               </div>
             </div>
-
-            <div>
-              <div class="form-group">
-                <label class="form-label">PayPal Developer Sandbox Client ID</label>
-                <input type="text" id="cfg-paypal-client-id" class="form-input mono" placeholder="e.g. A21AAJ... (leave empty for LOCAL_DEMO)">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">PayPal Developer Sandbox Client Secret</label>
-                <input type="password" id="cfg-paypal-client-secret" class="form-input mono" placeholder="Enter PayPal client secret">
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">PayPal Webhook ID (Optional)</label>
-                <input type="text" id="cfg-paypal-webhook-id" class="form-input mono" placeholder="e.g. 8W... (for live webhook verification)">
-              </div>
-            </div>
-          </div>
-
-          <div style="display: flex; gap: 10px; margin-top: 14px;">
-            <button class="btn btn-primary" onclick="SettingsView.saveSettings()">
-              Apply Runtime Settings
-            </button>
-            <button class="btn btn-secondary" onclick="SettingsView.testConnection()">
-              Test Connection
-            </button>
-            <button class="btn btn-secondary" onclick="SettingsView.clearCredentials()">
-              Revert to Safe Offline Demo
-            </button>
-          </div>
+          </details>
         </div>
 
-        <!-- Demo Data Reset Action Card -->
-        <div class="panel-card" style="border-left: 4px solid var(--status-warning);">
-          <div class="panel-header">
-            <span class="panel-title">Demonstration Environment State Management</span>
-            <span class="badge badge-warning">Resettable Dataset</span>
+        <!-- Data Management Section: Reset Sample Data -->
+        <div class="card" style="border-left: 4px solid var(--status-warning);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-weight: 700; font-size: 14px;">Data Management</span>
+            <span class="badge badge-warning">Sample Data</span>
           </div>
           <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 13px;">
-            Resetting the demo dataset restores all 5 freight logistics invoices, Master Service Agreements (MSAs), DOE diesel fuel surcharge formulas, and shipment telematics to their clean signature demonstration state.
+            Restores all 5 sample freight invoices, Master Service Agreement rate cards, fuel peg formulas, and telematics dwell logs to their initial clean state.
           </p>
-          <button class="btn btn-danger" onclick="SettingsView.confirmReset()">
-            Reset All Demo Data to Signature State
+          <button class="btn btn-danger btn-sm" onclick="SettingsView.confirmReset()">
+            Reset Sample Data
           </button>
         </div>
       `;
     } catch (e) {
-      container.innerHTML = `<div style="padding: 40px; color: var(--status-danger);">Failed loading settings diagnostics: ${e.message}</div>`;
+      container.innerHTML = `<div style="padding: 40px; color: var(--status-danger);">Failed loading settings: ${e.message}</div>`;
     }
   },
 
@@ -183,7 +184,6 @@ const SettingsView = {
     const paypalClientId = document.getElementById("cfg-paypal-client-id")?.value;
     const paypalClientSecret = document.getElementById("cfg-paypal-client-secret")?.value;
     const paypalWebhookId = document.getElementById("cfg-paypal-webhook-id")?.value;
-    const failureMode = document.getElementById("cfg-failure-mode")?.value;
 
     const payload = {};
     if (aiProvider) payload.ai_provider = aiProvider;
@@ -195,21 +195,20 @@ const SettingsView = {
     if (paypalClientId) payload.paypal_client_id = paypalClientId;
     if (paypalClientSecret) payload.paypal_client_secret = paypalClientSecret;
     if (paypalWebhookId) payload.paypal_webhook_id = paypalWebhookId;
-    if (failureMode !== undefined) payload.simulator_failure_mode = failureMode;
 
     try {
-      const res = await API.updateSettings(payload);
-      App.showToast("Settings updated successfully!", "success");
+      await API.updateSettings(payload);
+      App.showToast("Settings updated in memory!", "success");
       await this.loadDiagnostics();
       await App.refreshStatusBadges();
     } catch (e) {
-      App.showToast(`Failed to update settings: ${e.message}`, "error");
+      App.showToast(`Failed updating settings: ${e.message}`, "error");
     }
   },
 
   async testConnection() {
     try {
-      App.showToast("Testing gateway connections...", "info");
+      App.showToast("Testing gateway connection...", "info");
       const res = await API.testConnection();
       App.showToast(`Connection Test: PayPal [${res.paypal.status}], AI [${res.ai.status}]`, "success");
     } catch (e) {
@@ -223,10 +222,9 @@ const SettingsView = {
         paypal_client_id: "",
         paypal_client_secret: "",
         paypal_webhook_id: "",
-        forced_mode: "LOCAL_DEMO",
-        simulator_failure_mode: ""
+        forced_mode: "LOCAL_DEMO"
       });
-      App.showToast("Reverted to offline simulation mode.", "success");
+      App.showToast("Reverted to built-in simulation mode.", "success");
       await this.loadDiagnostics();
       await App.refreshStatusBadges();
     } catch (e) {
@@ -235,11 +233,14 @@ const SettingsView = {
   },
 
   async confirmReset() {
-    if (confirm("Reset all freight data to initial signature demo state?")) {
+    if (confirm("Reset all freight sample data to initial clean state?")) {
       try {
         const res = await API.resetDemoData();
         App.showToast(res.message, "success");
         await this.loadDiagnostics();
+        if (ControlTowerView.loadStats) {
+          await ControlTowerView.loadStats();
+        }
       } catch (e) {
         App.showToast(e.message, "error");
       }

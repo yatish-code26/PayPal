@@ -1,8 +1,7 @@
 # FreightGuard
-### Autonomous Freight Invoice Audit, Evidence Intelligence & PayPal Settlement
-*Built for the PayPal AI Hackathon*
+### Freight invoice audit and safe payments
 
-[![Tests](https://img.shields.io/badge/tests-21%20passed-success)](https://github.com/yatish-code26/PayPal.git)
+[![Tests](https://img.shields.io/badge/tests-33%20passed-success)](https://github.com/yatish-code26/PayPal.git)
 [![PayPal](https://img.shields.io/badge/PayPal%20Developer-Payouts%20API%20Sandbox-003087)](https://developer.paypal.com/)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -11,23 +10,24 @@
 
 ## 1. Executive Summary & Product Vision
 
-**FreightGuard** is an evidence-driven freight financial control tower engineered for third-party logistics providers (3PLs), freight brokers, enterprise shippers, and accounts-payable departments. Freight logistics is plagued by widespread invoice leakage—industry studies show 15–20% of all freight bills contain discrepancies ranging from unauthorized accessorial surcharges and off-tariff spot rates to duplicate dwell penalties.
+**FreightGuard** is an evidence-driven freight financial platform engineered for enterprise shippers, 3PL logistics brokers, and freight accounting teams. Industry studies show that 15–20% of all freight bills contain discrepancies ranging from unauthorized accessorial surcharges and off-tariff spot rates to duplicate dwell penalties.
 
 The central product guarantee:
-> *"Every freight charge must be explainable, every discrepancy must be evidenced, and every payout must pass deterministic financial controls."* 
+> *"Every freight charge must be explainable, every discrepancy must be evidenced, and every payout must pass deterministic financial controls."*
 
-FreightGuard replaces manual, error-prone spot-checking with an end-to-end **Evidence-to-Settlement Control Loop**:
-1. **Invoice Ingestion & Extraction**: Line-item breakdown of linehauls, fuel surcharges, detention, and accessorials from PDFs or raw text.
-2. **Contract Intelligence (BM25 Clause Ranking)**: Relevance-ranked retrieval of Master Service Agreement (MSA) clauses, lane tariffs, and fuel index formulas.
+FreightGuard replaces manual, error-prone spot-checking with an autonomous **Evidence-to-Settlement Control Loop**:
+1. **Invoice Ingestion & Extraction**: Line-item breakdown of linehauls, fuel surcharges, detention, and accessorials from PDFs or raw text via a unified extraction pipeline.
+2. **Contract Intelligence (BM25 Clause Ranking)**: Relevance-ranked retrieval of Master Service Agreement (MSA) clauses, lane tariffs, and DOE fuel peg formulas.
 3. **Telematics & Dock Verification**: Proof of delivery, bill of lading (BOL) profiles, and GPS geofence dwell logs.
-4. **Deterministic Policy Validation**: Exact decimal cents arithmetic isolating verified payable balances from uncontracted charges.
-5. **AI Dispute Intelligence & Synthesis**: Automated drafting of formal commercial dispute letters grounded in contract citations with Groq, Gemini, or OpenAI.
-6. **Controlled PayPal Payout**: Two-man segregation of duties authorization and execution via PayPal Developer Platform Payouts (`POST /v1/payments/payouts`).
-7. **Webhook-Driven Cryptographic Reconciliation**: Asynchronous state synchronization, idempotent replay protection, and append-only audit logging.
+4. **Deterministic Policy Engine**: Exact decimal cents arithmetic isolating verified payable balances from uncontracted charges.
+5. **AI Dispute Intelligence**: Automated drafting of formal commercial dispute letters grounded in cited contract clauses (Groq, Gemini, or OpenAI with local fallback).
+6. **"Pay Now, Hold the Rest" Settlement**: Immediate disbursement of undisputed freight to maintain carrier relationships, holding disputed charges in reserve pending dispute resolution.
+7. **Controlled PayPal Payouts**: Two-person segregation of duties authorization and execution via PayPal Developer Platform Payouts (`POST /v1/payments/payouts`).
+8. **Cryptographic Reconciliation & Audit**: Webhook-driven status synchronization, replay deduplication, and an append-only SHA-256 hash-chained audit log.
 
 ---
 
-## 2. The $2,180 Signature Demonstration Scenario
+## 2. Signature Demonstration Scenario
 
 Carrier: **Apex Global Freight Logistics**  
 Invoice: `#INV-2025-88419` | Shipment: `#SH-884192` (BOL `#BOL-99214`)  
@@ -68,7 +68,7 @@ flowchart TD
     end
 
     subgraph SETTLEMENT["4. Controlled Settlement & PayPal Payouts"]
-        G --> J["Two-Man Role Authorization\n(Sarah Chen + David Ross)"]
+        G --> J["Two-Person Role Authorization\n(Sarah Chen + David Ross)"]
         J --> K["PayPal Payouts Adapter\n(POST /v1/payments/payouts)"]
         K --> L["PayPal-Request-Id\nIdempotency Key"]
         L --> M["Carrier PayPal Account"]
@@ -79,7 +79,7 @@ flowchart TD
         N --> O["Signature Verification\n(HMAC / PayPal Cert API)"]
         O --> P["Event ID Deduplication"]
         P --> Q["State: RECONCILED"]
-        Q --> R["Immutable Audit Trail\n(SQLite WAL DB)"]
+        Q --> R["Immutable SHA-256 Audit Chain\n(SQLite WAL DB)"]
     end
 ```
 
@@ -95,13 +95,24 @@ Large Language Models draft commercial correspondence and synthesize explanation
 
 ### C. Financial Invariants
 1. **Zero Float Arithmetic:** All monetary math is stored and calculated in integer cents.
-2. **Reconciliation Equality:** `Total Billed == Approved Payable + Disputed Variance`.
-3. **Segregation of Duties (Two-Man Signoff):** Payouts require dual authorization. The same user cannot sign off as both Approver 1 and Approver 2.
+2. **Reconciliation Equality:** `Total Billed == Approved Payable + Disputed Variance + Held Reserve`.
+3. **Segregation of Duties (Two-Person Signoff):** Payouts require dual authorization. The same user cannot sign off as both Approver 1 and Approver 2.
 4. **Rate Limiting & Anti-Replay:** Sliding-window rate limiters protect financial endpoints. Webhooks enforce replay deduplication.
 
 ---
 
-## 5. Quickstart Guide
+## 5. Standout Features
+
+1. **"Pay Now, Hold the Rest" Settlement**: Splits invoices into verified payable balances paid immediately via PayPal Payouts and reserves held in escrow pending dispute resolution.
+2. **"Ask FreightGuard" Natural-Language Assistant**: Conversational assistant grounded directly in the SQLite database and Master Service Agreement clauses.
+3. **Carrier Scorecards & Renewal Intelligence**: Computes historical error rates, average overcharge, recurring violation patterns, and automated renewal negotiation talking points.
+4. **Tamper-Evident SHA-256 Audit Trail**: Hash-chained event log where each record cryptographically links to the previous block. One-click verification validates whole-chain integrity.
+5. **One-Click Dispute PDF Export**: Generates formal, pure-Python commercial dispute packets with zero external binary dependencies.
+6. **Cross-Invoice Anomaly & Duplicate Detection**: Flags duplicate billings across shipments (same PO/BOL within 48 hours) and off-tariff rate drift.
+
+---
+
+## 6. Quickstart Guide
 
 ### Prerequisites
 - Python 3.11, 3.12, or 3.14
@@ -120,7 +131,7 @@ Large Language Models draft commercial correspondence and synthesize explanation
    pip install -r requirements.txt
    ```
 
-3. **Run the test suite (Verify 21 tests pass):**
+3. **Run the test suite:**
    ```bash
    python -m pytest -v
    ```
@@ -139,60 +150,73 @@ Large Language Models draft commercial correspondence and synthesize explanation
 
 ---
 
-## 6. Docker & Container Deployment
+## 7. Environment Variables Reference
 
-To launch via Docker:
-```bash
-docker build -t freightguard .
-docker run -p 8000:8000 freightguard
-```
-
-Or using Docker Compose:
-```bash
-docker compose up -d
-```
+| Variable | Description | Default |
+|:---|:---|:---|
+| `FREIGHTGUARD_MODE` | Operational mode: `LOCAL_DEMO` or `LIVE_SANDBOX` | `LOCAL_DEMO` |
+| `PAYPAL_CLIENT_ID` | PayPal Developer Platform Sandbox Client ID | `""` |
+| `PAYPAL_CLIENT_SECRET` | PayPal Developer Platform Sandbox Client Secret | `""` |
+| `PAYPAL_WEBHOOK_ID` | PayPal Webhook ID for live webhook verification | `""` |
+| `AI_PROVIDER` | LLM Provider: `LOCAL_DETERMINISTIC`, `GROQ`, `GEMINI`, `OPENAI` | `LOCAL_DETERMINISTIC` |
+| `GROQ_API_KEY` | Groq API Key (uses `llama-3.3-70b-versatile`) | `""` |
+| `GEMINI_API_KEY` | Gemini API Key (uses `gemini-2.0-flash`) | `""` |
+| `OPENAI_API_KEY` | OpenAI API Key (uses `gpt-4o-mini`) | `""` |
+| `SESSION_SECRET` | Secret key for signed JWT/itsdangerous user session tokens | Configured default |
+| `WEBHOOK_LOCAL_HMAC_SECRET` | Local secret key for simulated webhook HMAC signatures | Configured default |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed frontend origins | `http://localhost:8000,...` |
 
 ---
 
-## 7. Key REST API Endpoints
+## 8. REST API Endpoints Reference
 
 | Method | Endpoint | Description |
 |:---|:---|:---|
 | `GET` | `/healthz` | System health and active adapter mode check |
-| `GET` | `/api/stats` | Executive control tower metrics (billed, payable, disputed) |
+| `GET` | `/api/stats` | Unified dashboard metrics and attention triage queue |
 | `GET` | `/api/invoices` | Filtered invoice queue |
 | `POST` | `/api/invoices/upload` | Upload PDF or text freight invoice for hybrid extraction |
 | `POST` | `/api/invoices/{id}/audit` | Run autonomous deterministic contract audit |
 | `GET` | `/api/ai/explain/{id}` | Plain-English AI explanation of audit findings |
 | `POST` | `/api/disputes/generate` | Generate formal dispute letter with BM25 contract citations |
-| `POST` | `/api/settlements/authorize` | Enforce two-man signoff and create settlement intent |
+| `POST` | `/api/disputes/{id}/resolve` | Resolve dispute upon credit note receipt and release held reserve |
+| `GET` | `/api/disputes/{id}/export-pdf` | Stream formal commercial dispute notice as a clean PDF |
+| `POST` | `/api/settlements/authorize` | Enforce two-person signoff and create settlement intent |
 | `POST` | `/api/settlements/payout` | Execute PayPal Sandbox Payout with idempotency |
+| `POST` | `/api/settlements/pay-now-hold-rest` | Split settlement: pay undisputed, hold disputed variance |
 | `POST` | `/api/webhooks/paypal` | Authoritative PayPal webhook listener with signature verification |
+| `GET` | `/api/carriers/scorecards` | Carrier performance metrics and renewal negotiation talking points |
+| `POST` | `/api/chat/ask` | Natural-language query answering grounded in SQLite data |
+| `GET` | `/api/anomalies` | Cross-invoice duplicate shipments and rate drift detector |
+| `GET` | `/api/audit-events/verify-integrity` | Cryptographic SHA-256 hash-chain verification across all audit records |
 | `GET` | `/api/settings` | Read safe diagnostic configuration and masked keys |
 | `POST` | `/api/settings` | In-memory runtime credential configuration |
 
 ---
 
-## 8. Verification & Test Suite
+## 9. Verification & Test Suite
 
-The test suite thoroughly verifies all security gates, financial invariants, and PayPal workflows:
+The test suite verifies all security gates, financial invariants, and PayPal workflows:
 ```bash
 python -m pytest -v
 ```
 
 Expected output:
 ```
-tests/test_ai_service.py ......................... PASSED [ 23%]
-tests/test_invoices_audit.py ..................... PASSED [ 33%]
-tests/test_policy_engine.py ...................... PASSED [ 52%]
-tests/test_security_hardening.py ................. PASSED [ 80%]
-tests/test_settlement_invariants.py .............. PASSED [ 95%]
-tests/test_webhooks.py ........................... PASSED [100%]
+tests/test_ai_service.py ......................... PASSED
+tests/test_dashboard_reconciliation.py ........... PASSED
+tests/test_invoices_audit.py ..................... PASSED
+tests/test_phase4_features.py .................... PASSED
+tests/test_policy_engine.py ...................... PASSED
+tests/test_security_hardening.py ................. PASSED
+tests/test_settlement_invariants.py .............. PASSED
+tests/test_webhooks.py ........................... PASSED
 
-============================= 21 passed in 1.33s ==============================
+============================= 33 passed in 1.85s ==============================
 ```
 
+---
 
-## 9. License
+## 10. License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

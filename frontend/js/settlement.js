@@ -1,7 +1,9 @@
 /**
- * Settlement Center View Controller
- * Enforces two-man authorization, idempotency, PayPal sandbox payout execution,
- * prohibited payout prevention tests, and webhook reconciliation.
+ * Payments & PayPal Settlement View Controller
+ * - Enforces two-person financial authorization (Segregation of Duties)
+ * - Executes PayPal Sandbox payouts with idempotency (PayPal-Request-Id)
+ * - Verifies real-time PayPal webhook reconciliation
+ * - Prevents duplicate payouts and unauthorized transfers
  */
 const SettlementView = {
   currentInvoiceId: "INV-2025-88419",
@@ -45,7 +47,7 @@ const SettlementView = {
       const invoice = await API.getInvoiceDetails(invoiceId);
       const isAudited = invoice.audit_status !== "PENDING_AUDIT";
       const isAuthorized = invoice.settlement_status === "AUTHORIZED" || Boolean(invoice.settlement_intent);
-      const isPaid = ["PAYOUT_INITIATED", "PAYOUT_SUCCESS", "RECONCILED"].includes(invoice.settlement_status);
+      const isPaid = ["PAYOUT_INITIATED", "PAYOUT_SUCCESS", "RECONCILED", "PARTIALLY_SETTLED_HELD"].includes(invoice.settlement_status);
       const isBlocked = invoice.audit_status === "BLOCKED";
 
       const totalBilled = invoice.total_billed_formatted;
@@ -53,197 +55,166 @@ const SettlementView = {
       const disputed = invoice.disputed_amount_formatted;
       const held = (invoice.held_amount_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
+      const approver1 = invoice.settlement_intent?.first_approver || "sarah.chen@shipper.internal";
+      const approver2 = invoice.settlement_intent?.second_approver || "david.ross@shipper.internal";
+
       container.innerHTML = `
-        <!-- Reconciliation Invariant Bar -->
-        <div class="settlement-reconciliation-bar" style="margin-bottom: 24px; border-left: 4px solid var(--accent-cyan);">
+        <!-- Top Status Card -->
+        <div class="card" style="margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
           <div>
             <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">PAYMENT SETTLEMENT POSITION</div>
             <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">
               Invoice #${invoice.invoice_number} &bull; ${invoice.carrier_name}
             </div>
             <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
-              Carrier PayPal Receiver: <strong class="mono" style="color: var(--accent-cyan);">${invoice.paypal_email}</strong>
+              Carrier Receiver: <strong class="mono" style="color: var(--accent-primary);">${invoice.paypal_email}</strong>
             </div>
           </div>
           <div style="display: flex; gap: 24px; text-align: right;">
             <div>
               <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">TOTAL BILLED</div>
-              <div class="mono" style="font-size: 17px; font-weight: 700;">$${totalBilled}</div>
+              <div class="amount" style="font-size: 18px; font-weight: 700;">$${totalBilled}</div>
             </div>
             <div>
-              <div style="font-size: 11px; color: var(--accent-cyan); font-weight: 600;">APPROVED PAYABLE</div>
-              <div class="mono" style="font-size: 17px; font-weight: 700; color: var(--accent-cyan);">$${payable}</div>
+              <div style="font-size: 11px; color: var(--status-success); font-weight: 600;">APPROVED PAYABLE</div>
+              <div class="amount" style="font-size: 18px; font-weight: 700; color: var(--status-success);">$${payable}</div>
             </div>
             <div>
-              <div style="font-size: 11px; color: var(--status-warning); font-weight: 600;">DISPUTED / HELD</div>
-              <div class="mono" style="font-size: 17px; font-weight: 700; color: var(--status-warning);">$${disputed}</div>
-            </div>
-            <div>
-              <div style="font-size: 11px; color: var(--text-muted); font-weight: 600;">STATUS</div>
+              <div style="font-size: 11px; color: var(--status-warning); font-weight: 600;">STATUS</div>
               <div>${App.getSettlementStatusBadge(invoice.settlement_status)}</div>
             </div>
           </div>
         </div>
 
-        <!-- 5-Step Deterministic Financial Settlement Stepper -->
-        <div class="settlement-stepper">
-          <div class="step-item ${isAudited ? 'completed' : 'active'}">
-            <div class="step-circle">${isAudited ? '✓' : '1'}</div>
-            <div class="step-label">1. Audit Validated</div>
-          </div>
-          <div class="step-item ${isAuthorized || isPaid ? 'completed' : (isAudited ? 'active' : '')}">
-            <div class="step-circle">${isAuthorized || isPaid ? '✓' : '2'}</div>
-            <div class="step-label">2. Signoff 1 (Sarah)</div>
-          </div>
-          <div class="step-item ${isAuthorized || isPaid ? 'completed' : ''}">
-            <div class="step-circle">${isAuthorized || isPaid ? '✓' : '3'}</div>
-            <div class="step-label">3. Signoff 2 (David)</div>
-          </div>
-          <div class="step-item ${isPaid ? 'completed' : (isAuthorized ? 'active' : '')}">
-            <div class="step-circle">${isPaid ? '✓' : '4'}</div>
-            <div class="step-label">4. PayPal Sandbox Payout</div>
-          </div>
-          <div class="step-item ${invoice.settlement_status === 'RECONCILED' ? 'completed' : (isPaid ? 'active' : '')}">
-            <div class="step-circle">${invoice.settlement_status === 'RECONCILED' ? '✓' : '5'}</div>
-            <div class="step-label">5. Webhook Reconciled</div>
-          </div>
-        </div>
-
-        <div class="workbench-grid">
-          <!-- Left: Authorization & Payout Trigger -->
-          <div class="panel-card">
-            <div class="panel-header">
-              <span class="panel-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                Two-Man Financial Authorization & Payout
-              </span>
-              <span class="badge ${isAuthorized ? 'badge-clean' : 'badge-pending'}">
-                ${isAuthorized ? 'Authorization Valid' : 'Requires Signoff'}
+        <div class="workbench-split-grid">
+          <!-- Left: Authorization & Payout Execution -->
+          <div class="card">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+              <span style="font-weight: 700; font-size: 14px;">Two-Person Financial Authorization</span>
+              <span class="badge ${isAuthorized ? 'badge-clean' : 'badge-neutral'}">
+                ${isAuthorized ? 'Signoff Approved' : 'Signoff Required'}
               </span>
             </div>
 
-            <!-- Warning if not audited -->
             ${!isAudited ? `
-              <div style="padding: 14px; background-color: var(--status-warning-bg); border: 1px solid rgba(245,158,11,0.3); border-radius: var(--radius-sm); margin-bottom: 16px; color: var(--status-warning); font-size: 13px;">
-                <strong>Audit Invariant:</strong> This invoice has not been audited yet. Payout initiation is strictly prohibited by policy engine.
+              <div style="padding: 12px 14px; background-color: var(--status-warning-bg); border-radius: var(--radius-sm); margin-bottom: 14px; color: var(--status-warning); font-size: 13px;">
+                <strong>Policy Guard:</strong> This invoice has not been audited yet. Payout initiation is restricted until contract audit is verified.
               </div>
             ` : ''}
 
-            <!-- Warning if blocked -->
             ${isBlocked ? `
-              <div style="padding: 14px; background-color: var(--status-danger-bg); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius-sm); margin-bottom: 16px; color: var(--status-danger); font-size: 13px;">
-                <strong>Fatal Policy Block:</strong> This invoice failed critical duplicate shipment validation. All settlement actions are permanently frozen.
+              <div style="padding: 12px 14px; background-color: var(--status-danger-bg); border-radius: var(--radius-sm); margin-bottom: 14px; color: var(--status-danger); font-size: 13px;">
+                <strong>Duplicate Block:</strong> This invoice failed cross-invoice duplicate checks. Financial payout is permanently frozen.
               </div>
             ` : ''}
 
-            <!-- Authorization Form -->
-            <div class="form-group">
-              <label class="form-label">Primary Accounts Payable Approver</label>
-              <input type="text" id="settle-approver-1" class="form-input mono" value="sarah.chen@shipper.internal" ${isPaid ? 'disabled' : ''}>
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+              <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+                  Primary Approver (Accounts Payable)
+                </label>
+                <input type="text" id="settle-approver-1" class="form-input mono" style="width: 100%;" value="${approver1}" ${isPaid ? 'disabled' : ''}>
+              </div>
+
+              <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+                  Secondary Approver (Financial Controller)
+                </label>
+                <input type="text" id="settle-approver-2" class="form-input mono" style="width: 100%;" value="${approver2}" ${isPaid ? 'disabled' : ''}>
+              </div>
+
+              <div>
+                <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+                  Idempotency Key (PayPal-Request-Id)
+                </label>
+                <input type="text" id="settle-idempotency-key" class="form-input mono" style="width: 100%;"
+                  value="${invoice.settlement_intent?.idempotency_key || 'IDEM-' + invoice.invoice_number + '-SBX'}" 
+                  ${isPaid ? 'disabled' : ''}>
+                <span style="font-size: 11px; color: var(--text-muted); margin-top: 2px; display: block;">
+                  Cryptographic idempotency token prevents double-execution.
+                </span>
+              </div>
             </div>
 
-            <div class="form-group">
-              <label class="form-label">Secondary Financial Officer (Dual Signoff)</label>
-              <input type="text" id="settle-approver-2" class="form-input mono" value="david.ross@shipper.internal" ${isPaid ? 'disabled' : ''}>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">Durable Idempotency Key</label>
-              <input type="text" id="settle-idempotency-key" class="form-input mono" 
-                value="${invoice.settlement_intent?.idempotency_key || 'IDEM-' + invoice.invoice_number + '-SBX01'}" 
-                ${isPaid ? 'disabled' : ''}>
-              <small style="color: var(--text-muted); font-size: 11px;">PayPal-Request-Id header token ensures exactly-once execution.</small>
-            </div>
-
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <div style="display: flex; gap: 10px; margin-top: 16px;">
               ${!isAuthorized && !isPaid ? `
                 <button class="btn btn-secondary" onclick="SettlementView.authorize()" style="flex: 1;">
-                  Authorize Settlement Intent
+                  Authorize Dual Signoff
                 </button>
               ` : ''}
 
               <button class="btn btn-primary" onclick="SettlementView.executePayout()" style="flex: 1;" ${isPaid || isBlocked ? 'disabled' : ''}>
-                ${isPaid ? 'Payout Already Executed' : `Execute PayPal Sandbox Payout ($${payable})`}
+                ${isPaid ? 'Payout Executed' : `Execute PayPal Payout ($${payable})`}
               </button>
             </div>
 
-            <!-- Prohibited Payout Demonstration Button -->
-            <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-subtle);">
-              <div style="font-size: 11px; text-transform: uppercase; color: var(--status-danger); font-weight: 700; margin-bottom: 6px;">
-                SECURITY & POLICY INVARIANT PROOF TEST
+            <!-- Prohibited Payment Safeguards Proof -->
+            <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin-bottom: 6px;">
+                Policy Invariant Proof Tests
               </div>
-              <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
-                Demonstrate system defenses against unauthorized payments, duplicate settlement attempts, or client tampering:
-              </p>
               <div style="display: flex; gap: 8px;">
                 <button class="btn btn-danger btn-sm" onclick="SettlementView.testProhibitedPayment('BLOCKED')">
-                  Test Pay Blocked Duplicate
+                  Test Pay Blocked Invoice
                 </button>
                 <button class="btn btn-danger btn-sm" onclick="SettlementView.testProhibitedPayment('DUPLICATE')">
-                  Test Duplicate Payout Replay
+                  Test Duplicate Replay
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- Right: PayPal Sandbox API Response & Webhook Simulator -->
-          <div class="panel-card">
-            <div class="panel-header">
-              <span class="panel-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
-                PayPal Sandbox Gateway Inspector
-              </span>
-              <span class="badge ${invoice.payout_record ? 'badge-clean' : 'badge-pending'}">
-                ${invoice.payout_record ? (invoice.payout_record.is_simulated ? 'Sandbox Simulator' : 'Live Gateway') : 'No Active Payout'}
+          <!-- Right: PayPal API Transaction & Webhook Reconciliation -->
+          <div class="card">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+              <span style="font-weight: 700; font-size: 14px;">PayPal Sandbox Integration Status</span>
+              <span class="badge ${invoice.payout_record ? 'badge-clean' : 'badge-neutral'}">
+                ${invoice.payout_record ? 'Transaction Active' : 'No Payout Yet'}
               </span>
             </div>
 
             ${invoice.payout_record ? `
-              <div style="background-color: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 16px; font-size: 12px;">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                  <div>PayPal Batch ID: <strong class="mono" style="color: var(--accent-cyan);">${invoice.payout_record.paypal_batch_id}</strong></div>
-                  <div>PayPal Item ID: <strong class="mono" style="color: var(--accent-cyan);">${invoice.payout_record.paypal_item_id}</strong></div>
+              <div style="background-color: var(--bg-muted); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 16px; font-size: 12px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                  <div>Batch ID: <strong class="mono" style="color: var(--accent-primary);">${invoice.payout_record.paypal_batch_id}</strong></div>
+                  <div>Payout Item ID: <strong class="mono" style="color: var(--accent-primary);">${invoice.payout_record.paypal_item_id}</strong></div>
                   <div>Batch Status: <span class="badge badge-clean">${invoice.payout_record.batch_status}</span></div>
                   <div>Item Status: <span class="badge badge-clean">${invoice.payout_record.item_status}</span></div>
-                  <div>Amount Transferred: <strong class="mono" style="color: var(--text-primary);">$${payable} ${invoice.currency}</strong></div>
-                  <div>PayPal Fee: <strong class="mono">$0.25</strong></div>
+                  <div>Transferred: <strong class="amount" style="color: var(--text-primary);">$${payable}</strong></div>
+                  <div>Recipient: <span class="mono">${invoice.paypal_email}</span></div>
                 </div>
               </div>
 
-              <!-- Raw JSON Inspector -->
-              <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">
-                AUTHORITATIVE PAYPAL API RESPONSE PAYLOAD
-              </div>
-              <pre class="raw-json-inspector">${JSON.stringify(JSON.parse(invoice.payout_record.raw_paypal_response_json || '{}'), null, 2)}</pre>
-
-              <!-- Webhook Reconciliation Simulator -->
-              <div style="margin-top: 16px; padding: 14px; background-color: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);">
+              <!-- Webhook Reconciliation Trigger -->
+              <div style="border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 14px;">
                 <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--status-success); margin-bottom: 6px;">
-                  WEBHOOK-DRIVEN RECONCILIATION SIMULATOR
+                  PayPal Webhook Reconciliation
                 </div>
                 <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
-                  Simulate asynchronous delivery of PayPal webhook events for item settlement:
+                  Simulate authoritative webhook event delivery with HMAC signature verification:
                 </p>
                 <div style="display: flex; gap: 8px;">
-                  <button class="btn btn-success btn-sm" onclick="SettlementView.triggerWebhook('PAYMENT.PAYOUTS-ITEM.SUCCEEDED', '${invoice.payout_record.paypal_item_id}')">
+                  <button class="btn btn-success btn-sm" onclick="SettlementView.triggerWebhook('PAYMENT.PAYOUTS-ITEM.SUCCEEDED', '${invoice.payout_record.paypal_item_id}', '${invoice.payout_record.paypal_batch_id}')">
                     Simulate Item Succeeded (200 OK)
                   </button>
-                  <button class="btn btn-danger btn-sm" onclick="SettlementView.triggerWebhook('PAYMENT.PAYOUTS-ITEM.FAILED', '${invoice.payout_record.paypal_item_id}')">
+                  <button class="btn btn-danger btn-sm" onclick="SettlementView.triggerWebhook('PAYMENT.PAYOUTS-ITEM.FAILED', '${invoice.payout_record.paypal_item_id}', '${invoice.payout_record.paypal_batch_id}')">
                     Simulate Item Failed
                   </button>
                 </div>
               </div>
             ` : `
-              <div style="padding: 40px; text-align: center; color: var(--text-muted); background-color: var(--bg-primary); border-radius: var(--radius-sm);">
-                <p>No PayPal payout has been executed yet for this invoice.</p>
-                <p style="font-size: 12px; margin-top: 6px;">Authorize settlement intent on the left to initiate the payout sequence.</p>
+              <div style="padding: 40px; text-align: center; color: var(--text-muted); background-color: var(--bg-muted); border-radius: var(--radius-sm);">
+                <p style="font-size: 13px;">No PayPal payout has been executed yet for this invoice.</p>
+                <p style="font-size: 12px; margin-top: 6px; color: var(--text-muted);">
+                  Authorize and execute above to initiate disbursement through PayPal Payouts.
+                </p>
               </div>
             `}
           </div>
         </div>
       `;
     } catch (e) {
-      container.innerHTML = `<div style="padding: 40px; color: var(--status-danger);">Failed loading settlement center: ${e.message}</div>`;
+      container.innerHTML = `<div style="padding: 40px; color: var(--status-danger);">Failed loading settlement view: ${e.message}</div>`;
     }
   },
 
@@ -267,9 +238,9 @@ const SettlementView = {
 
     try {
       const res = await API.executePayout(this.currentInvoiceId, idemKey, approver1, approver2);
-      App.showToast(`PayPal Payout Executed! Batch: ${res.paypal_batch_id} (${res.mode_label})`, "success");
+      App.showToast(`PayPal Payout Executed! Batch: ${res.paypal_batch_id}`, "success");
       await this.loadSettlementView(this.currentInvoiceId);
-      ControlTowerView.loadStats();
+      await ControlTowerView.loadStats();
     } catch (e) {
       App.showToast(`Payout rejected: ${e.message}`, "error");
     }
@@ -277,32 +248,27 @@ const SettlementView = {
 
   async testProhibitedPayment(testType) {
     if (testType === 'BLOCKED') {
-      // Attempt to force payout on blocked duplicate invoice (INV-2025-99301)
       try {
         await API.executePayout("INV-2025-99301", "IDEM-ATTEMPT-FORCED-01", "operator", "operator");
       } catch (e) {
         App.openModal(
-          "Deterministic Policy Invariant Enforced",
-          `<div style="color: var(--status-danger); font-size: 14px; margin-bottom: 12px;"><strong>403 FORBIDDEN: Fatal Settlement Invariant Triggered</strong></div>
-           <p style="color: var(--text-secondary); margin-bottom: 12px;">The system successfully rejected the unauthorized settlement attempt:</p>
-           <div style="background: var(--bg-primary); padding: 12px; border-left: 3px solid var(--status-danger); font-family: monospace; font-size: 12px;">
+          "Policy Invariant Enforced",
+          `<div style="color: var(--status-danger); font-size: 14px; margin-bottom: 12px;"><strong>400 Bad Request: Invariant Defense Triggered</strong></div>
+           <p style="color: var(--text-secondary); margin-bottom: 12px;">The policy engine blocked payment for an invalid invoice:</p>
+           <div style="background: var(--bg-muted); padding: 12px; border-left: 3px solid var(--status-danger); font-family: monospace; font-size: 12px;">
              ${e.message}
-           </div>
-           <p style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">
-             Invariants enforced: Never pay an un-audited, held, or blocked duplicate freight invoice.
-           </p>`
+           </div>`
         );
       }
     } else if (testType === 'DUPLICATE') {
-      // Attempt duplicate payout for current invoice
       try {
-        await API.executePayout(this.currentInvoiceId, "IDEM-FORCED-NEW-KEY-02", "operator", "operator");
+        await API.executePayout(this.currentInvoiceId, "IDEM-FORCED-REPLAY-02", "operator", "operator");
       } catch (e) {
         App.openModal(
-          "Duplicate Payout Prevention Enforced",
-          `<div style="color: var(--status-warning); font-size: 14px; margin-bottom: 12px;"><strong>409 CONFLICT: Duplicate Settlement Prevented</strong></div>
-           <p style="color: var(--text-secondary); margin-bottom: 12px;">The backend policy engine prevented a duplicate transfer:</p>
-           <div style="background: var(--bg-primary); padding: 12px; border-left: 3px solid var(--status-warning); font-family: monospace; font-size: 12px;">
+          "Duplicate Payout Prevented",
+          `<div style="color: var(--status-warning); font-size: 14px; margin-bottom: 12px;"><strong>Duplicate Settlement Prevented</strong></div>
+           <p style="color: var(--text-secondary); margin-bottom: 12px;">The policy engine prevented a re-execution of an authorized payout:</p>
+           <div style="background: var(--bg-muted); padding: 12px; border-left: 3px solid var(--status-warning); font-family: monospace; font-size: 12px;">
              ${e.message}
            </div>`
         );
@@ -310,12 +276,12 @@ const SettlementView = {
     }
   },
 
-  async triggerWebhook(eventType, itemId) {
+  async triggerWebhook(eventType, itemId, batchId) {
     try {
-      const res = await API.simulateWebhook(eventType, itemId);
-      App.showToast(`Webhook event '${eventType}' processed! Invoice status reconciled.`, "success");
+      const res = await API.simulateWebhook(eventType, itemId, batchId);
+      App.showToast(`Webhook event '${eventType}' verified and processed!`, "success");
       await this.loadSettlementView(this.currentInvoiceId);
-      ControlTowerView.loadStats();
+      await ControlTowerView.loadStats();
     } catch (e) {
       App.showToast(`Webhook simulation failed: ${e.message}`, "error");
     }

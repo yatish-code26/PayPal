@@ -123,12 +123,28 @@ const API = {
       first_approver: approver1,
       second_approver: approver2
     }),
+  payNowHoldRest: (invoiceId, idempotencyKey) =>
+    API.post("/api/settlements/pay-now-hold-rest", {
+      invoice_id: invoiceId,
+      idempotency_key: idempotencyKey
+    }),
+  resolveDispute: (disputeId, creditRef) =>
+    API.post(`/api/disputes/${encodeURIComponent(disputeId)}/resolve`, {
+      credit_note_ref: creditRef
+    }),
   simulateWebhook: (eventType, payoutItemId, payoutBatchId) =>
     API.post("/api/webhooks/simulate", {
       event_type: eventType,
       payout_item_id: payoutItemId,
       payout_batch_id: payoutBatchId
     }),
+
+  // Advanced Features & Intelligence
+  getCarrierScorecards: () => API.get("/api/carriers/scorecards"),
+  askFreightGuard: (question) => API.post("/api/chat/ask", { question }),
+  getAnomalies: () => API.get("/api/anomalies"),
+  verifyAuditIntegrity: () => API.get("/api/audit-events/verify-integrity"),
+  getDisputePdfUrl: (disputeId) => `/api/disputes/${encodeURIComponent(disputeId)}/export-pdf`,
 
   // Logs & Settings
   getAuditEvents: () => API.get("/api/audit-events"),

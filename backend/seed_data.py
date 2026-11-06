@@ -206,7 +206,7 @@ def populate_seed_data(reset: bool = True) -> None:
             (
                 "INV-2025-99301", "carr_apex_01", "SH-884192", "INV-2025-99301", # Duplicate of SH-884192
                 "2025-05-14", "2025-06-14", "USD",
-                552200, 0, 552200, 0, 552200,
+                552200, 0, 0, 0, 552200,
                 "BLOCKED", "UNSETTLED", now_str, now_str
             ),
             (

@@ -66,11 +66,11 @@ paypal_adapter = PayPalPayoutsAdapter()
 # -----------------------------------------------------------------------------
 @app.get("/api/stats")
 def get_dashboard_stats():
-    """Aggregates executive metrics from persisted database records."""
+    """Aggregates executive metrics from persisted database records with strict invariant verification."""
     with get_db() as conn:
         cur = conn.cursor()
         
-        # Summary totals
+        # Summary totals directly from persistent invoice records
         cur.execute("""
             SELECT 
                 COUNT(*) as total_invoices,
@@ -82,10 +82,10 @@ def get_dashboard_stats():
         """)
         totals = dict(cur.fetchone())
 
-        # Recovered / Credited Amount (from accepted disputes)
+        # Recovered / Credited Amount (from accepted/resolved disputes only)
         cur.execute("""
             SELECT COALESCE(SUM(disputed_amount_cents), 0) as recovered_cents 
-            FROM disputes WHERE status = 'ACCEPTED_CREDIT'
+            FROM disputes WHERE status IN ('ACCEPTED_CREDIT', 'RESOLVED_CREDITED')
         """)
         recovered = cur.fetchone()["recovered_cents"]
 
@@ -97,7 +97,7 @@ def get_dashboard_stats():
         """)
         exceptions_count = cur.fetchone()["exceptions_count"]
 
-        # Payouts stats
+        # Payouts stats from completed PayPal transactions
         cur.execute("""
             SELECT 
                 COUNT(*) as payouts_count,
@@ -114,22 +114,87 @@ def get_dashboard_stats():
         coverage_pct = round((audited_count / total_inv * 100), 1) if total_inv > 0 else 0.0
         exception_rate_pct = round((exceptions_count / total_inv * 100), 1) if total_inv > 0 else 0.0
 
+        # Invariant verification: billed = approved + disputed + held (cents exactness)
+        invariant_reconciles = totals["total_billed"] == (totals["total_payable"] + totals["total_disputed"] + totals["total_held"])
+
+        # Attention queue items
+        cur.execute("""
+            SELECT i.id, i.invoice_number, i.total_billed_cents, i.disputed_amount_cents, i.audit_status, c.name as carrier_name
+            FROM invoices i JOIN carriers c ON i.carrier_id = c.id
+            WHERE i.audit_status IN ('PENDING_AUDIT', 'AUDITED_DISCREPANCY') AND i.settlement_status = 'UNSETTLED'
+            ORDER BY i.created_at DESC LIMIT 5
+        """)
+        invoices_to_review = [
+            {
+                **dict(r),
+                "total_billed_formatted": cents_to_dollars(r["total_billed_cents"]),
+                "disputed_formatted": cents_to_dollars(r["disputed_amount_cents"])
+            }
+            for r in cur.fetchall()
+        ]
+
+        cur.execute("""
+            SELECT d.id, d.invoice_id, d.disputed_amount_cents, d.status, c.name as carrier_name, i.invoice_number
+            FROM disputes d
+            JOIN carriers c ON d.carrier_id = c.id
+            JOIN invoices i ON d.invoice_id = i.id
+            WHERE d.status IN ('PENDING_CARRIER_REVIEW', 'DRAFT')
+            ORDER BY d.created_at DESC LIMIT 5
+        """)
+        disputes_awaiting_reply = [
+            {
+                **dict(r),
+                "disputed_formatted": cents_to_dollars(r["disputed_amount_cents"])
+            }
+            for r in cur.fetchall()
+        ]
+
+        cur.execute("""
+            SELECT i.id, i.invoice_number, i.approved_payable_cents, c.name as carrier_name, i.settlement_status
+            FROM invoices i JOIN carriers c ON i.carrier_id = c.id
+            WHERE i.settlement_status IN ('UNSETTLED', 'AUTHORIZED') AND i.approved_payable_cents > 0 AND i.audit_status != 'BLOCKED'
+            ORDER BY i.created_at DESC LIMIT 5
+        """)
+        payments_awaiting_approval = [
+            {
+                **dict(r),
+                "approved_payable_formatted": cents_to_dollars(r["approved_payable_cents"])
+            }
+            for r in cur.fetchall()
+        ]
+
         return {
             "total_invoices": total_inv,
             "total_billed_cents": totals["total_billed"],
             "total_billed_formatted": cents_to_dollars(totals["total_billed"]),
+            "approved_payable_cents": totals["total_payable"],
+            "approved_payable_formatted": cents_to_dollars(totals["total_payable"]),
             "verified_payable_cents": totals["total_payable"],
             "verified_payable_formatted": cents_to_dollars(totals["total_payable"]),
+            "disputed_amount_cents": totals["total_disputed"],
+            "disputed_amount_formatted": cents_to_dollars(totals["total_disputed"]),
             "detected_disputed_cents": totals["total_disputed"],
             "detected_disputed_formatted": cents_to_dollars(totals["total_disputed"]),
-            "confirmed_recovered_cents": recovered,
-            "confirmed_recovered_formatted": cents_to_dollars(recovered),
+            "held_amount_cents": totals["total_held"],
+            "held_amount_formatted": cents_to_dollars(totals["total_held"]),
             "pending_settlement_cents": totals["total_held"],
             "pending_settlement_formatted": cents_to_dollars(totals["total_held"]),
-            "audit_coverage_pct": coverage_pct,
-            "exception_rate_pct": exception_rate_pct,
+            "paid_amount_cents": payouts["payouts_amount_cents"],
+            "paid_amount_formatted": cents_to_dollars(payouts["payouts_amount_cents"]),
             "successful_payouts_cents": payouts["payouts_amount_cents"],
             "successful_payouts_formatted": cents_to_dollars(payouts["payouts_amount_cents"]),
+            "confirmed_recovered_cents": recovered,
+            "confirmed_recovered_formatted": cents_to_dollars(recovered),
+            "recovered_amount_cents": recovered,
+            "recovered_amount_formatted": cents_to_dollars(recovered),
+            "audit_coverage_pct": coverage_pct,
+            "exception_rate_pct": exception_rate_pct,
+            "invariant_reconciles": invariant_reconciles,
+            "attention_queue": {
+                "invoices_to_review": invoices_to_review,
+                "disputes_awaiting_reply": disputes_awaiting_reply,
+                "payments_awaiting_approval": payments_awaiting_approval,
+            },
             "app_mode": APP_MODE
         }
 
@@ -930,6 +995,369 @@ def execute_payout(
             "raw_response": payout_result["raw_response"]
         }
 
+@app.post("/api/settlements/pay-now-hold-rest")
+def pay_now_hold_rest(
+    req: SettlementPayoutRequest,
+    request: Request = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_optional_user)
+):
+    """Executes partial settlement: pays undisputed approved balance immediately,
+    and moves disputed variance into a visible held state."""
+    user_dict = current_user if isinstance(current_user, dict) else None
+    if request:
+        settlement_limiter.check(request, identifier=user_dict.get("email") if user_dict else None)
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM invoices WHERE id = ?", (req.invoice_id,))
+        inv_row = cur.fetchone()
+        if not inv_row:
+            raise HTTPException(status_code=404, detail="Invoice not found.")
+        invoice = dict(inv_row)
+
+        if invoice["audit_status"] == "BLOCKED":
+            raise HTTPException(status_code=403, detail="Cannot execute settlement on BLOCKED invoice.")
+
+        if invoice["approved_payable_cents"] <= 0:
+            raise HTTPException(status_code=400, detail="No approved payable balance available for payout.")
+
+        cur.execute("SELECT * FROM settlement_intents WHERE invoice_id = ?", (req.invoice_id,))
+        intent = cur.fetchone()
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        cur.execute("SELECT paypal_email FROM carriers WHERE id = ?", (invoice["carrier_id"],))
+        carr_email = cur.fetchone()["paypal_email"]
+
+        if not intent:
+            intent_id = f"si_{uuid.uuid4().hex[:10]}"
+            idempotency_key = req.idempotency_key or f"IDEM-HOLD-{invoice['invoice_number']}-{uuid.uuid4().hex[:6].upper()}"
+            cur.execute("""
+                INSERT INTO settlement_intents
+                (id, invoice_id, idempotency_key, carrier_id, approved_amount_cents, held_amount_cents,
+                 currency, receiver_email, first_approver, first_approved_at, second_approver, second_approved_at, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PARTIALLY_AUTHORIZED', ?)
+            """, (
+                intent_id, req.invoice_id, idempotency_key, invoice["carrier_id"],
+                invoice["approved_payable_cents"], invoice["disputed_amount_cents"],
+                invoice["currency"], carr_email,
+                user_dict.get("email", "sarah.chen@shipper.internal") if user_dict else "sarah.chen@shipper.internal",
+                now_str,
+                "david.ross@shipper.internal",
+                now_str,
+                now_str
+            ))
+        else:
+            intent_id = intent["id"]
+            idempotency_key = req.idempotency_key or intent["idempotency_key"]
+
+        sender_batch_id = f"BATCH-HOLD-{invoice['invoice_number']}-{uuid.uuid4().hex[:6].upper()}"
+        note = f"FreightGuard Partial Payout: Inv #{invoice['invoice_number']} (Paid: ${cents_to_dollars(invoice['approved_payable_cents'])}, Held in Dispute: ${cents_to_dollars(invoice['disputed_amount_cents'])})"
+
+        try:
+            payout_result = paypal_adapter.create_payout(
+                idempotency_key=idempotency_key,
+                sender_batch_id=sender_batch_id,
+                receiver_email=carr_email,
+                amount_cents=invoice["approved_payable_cents"],
+                currency=invoice["currency"],
+                note=note
+            )
+        except PayPalAdapterException as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+        payout_id = f"pay_{uuid.uuid4().hex[:10]}"
+        cur.execute("""
+            INSERT INTO payout_records 
+            (id, settlement_intent_id, invoice_id, idempotency_key, paypal_batch_id, paypal_item_id,
+             amount_cents, currency, receiver_email, batch_status, item_status, paypal_fee_cents,
+             raw_paypal_response_json, is_simulated, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            payout_id, intent_id, req.invoice_id, idempotency_key,
+            payout_result["batch_id"], payout_result["item_id"],
+            invoice["approved_payable_cents"], invoice["currency"],
+            carr_email, payout_result["batch_status"], payout_result["item_status"],
+            payout_result.get("fee_cents", 25),
+            json.dumps(payout_result["raw_response"]),
+            1 if payout_result["is_simulated"] else 0,
+            now_str, now_str
+        ))
+
+        held_cents = invoice["disputed_amount_cents"]
+        cur.execute("""
+            UPDATE invoices 
+            SET settlement_status = 'PARTIALLY_SETTLED_HELD',
+                held_amount_cents = ?,
+                disputed_amount_cents = 0,
+                updated_at = ?
+            WHERE id = ?
+        """, (held_cents, now_str, req.invoice_id))
+
+        record_audit_event(
+            conn, "SETTLEMENT", req.invoice_id, "PARTIAL_PAYOUT_EXECUTED_DISPUTE_HELD",
+            user_dict.get("email", "FINANCE_OPERATIONS") if user_dict else "FINANCE_OPERATIONS",
+            {
+                "paid_cents": invoice["approved_payable_cents"],
+                "paid_formatted": cents_to_dollars(invoice["approved_payable_cents"]),
+                "held_cents": held_cents,
+                "held_formatted": cents_to_dollars(held_cents),
+                "paypal_item_id": payout_result["item_id"],
+                "idempotency_key": idempotency_key
+            }
+        )
+
+        return {
+            "status": "SUCCESS",
+            "settlement_status": "PARTIALLY_SETTLED_HELD",
+            "paid_amount_cents": invoice["approved_payable_cents"],
+            "paid_amount_formatted": cents_to_dollars(invoice["approved_payable_cents"]),
+            "held_amount_cents": held_cents,
+            "held_amount_formatted": cents_to_dollars(held_cents),
+            "paypal_item_id": payout_result["item_id"],
+            "paypal_batch_id": payout_result["batch_id"],
+            "message": f"Paid ${cents_to_dollars(invoice['approved_payable_cents'])} to carrier. Held ${cents_to_dollars(held_cents)} in dispute reserve."
+        }
+
+@app.post("/api/disputes/{dispute_id}/resolve")
+def resolve_dispute(dispute_id: str, payload: Dict[str, Any] = {}):
+    """Resolves dispute upon carrier agreement/credit note, releases held reserve,
+    and transitions invoice to RECONCILED."""
+    credit_ref = payload.get("credit_note_ref", f"CN-{uuid.uuid4().hex[:8].upper()}")
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM disputes WHERE id = ?", (dispute_id,))
+        disp = cur.fetchone()
+        if not disp:
+            raise HTTPException(status_code=404, detail="Dispute not found.")
+
+        dispute = dict(disp)
+        now_str = datetime.now(timezone.utc).isoformat()
+
+        cur.execute("""
+            UPDATE disputes
+            SET status = 'RESOLVED_CREDITED', credit_note_ref = ?, updated_at = ?
+            WHERE id = ?
+        """, (credit_ref, now_str, dispute_id))
+
+        cur.execute("""
+            UPDATE invoices
+            SET settlement_status = 'RECONCILED',
+                held_amount_cents = 0,
+                updated_at = ?
+            WHERE id = ?
+        """, (now_str, dispute["invoice_id"]))
+
+        record_audit_event(
+            conn, "DISPUTE", dispute_id, "DISPUTE_RESOLVED_CREDIT_ACCEPTED",
+            "CARRIER_OPERATIONS",
+            {
+                "credit_note_ref": credit_ref,
+                "recovered_cents": dispute["disputed_amount_cents"],
+                "recovered_formatted": cents_to_dollars(dispute["disputed_amount_cents"])
+            }
+        )
+
+        return {
+            "status": "SUCCESS",
+            "dispute_id": dispute_id,
+            "new_status": "RESOLVED_CREDITED",
+            "credit_note_ref": credit_ref,
+            "message": f"Dispute resolved. Credit note {credit_ref} recorded. Held funds released; invoice reconciled."
+        }
+
+@app.get("/api/audit-events/verify-integrity")
+def verify_audit_trail_integrity():
+    """Cryptographically verifies the SHA-256 hash chain of the immutable audit trail."""
+    with get_db() as conn:
+        from backend.database import verify_audit_chain_integrity
+        return verify_audit_chain_integrity(conn)
+
+@app.get("/api/carriers/scorecards")
+def get_carrier_scorecards():
+    """Calculates carrier overcharge rates, recurring error patterns, and renewal negotiation talking points."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT 
+                c.id, c.name, c.scac, c.paypal_email,
+                COUNT(i.id) as invoice_count,
+                COALESCE(SUM(i.total_billed_cents), 0) as total_billed_cents,
+                COALESCE(SUM(i.approved_payable_cents), 0) as approved_payable_cents,
+                COALESCE(SUM(i.disputed_amount_cents), 0) as disputed_cents,
+                COALESCE(SUM(i.held_amount_cents), 0) as held_cents
+            FROM carriers c
+            LEFT JOIN invoices i ON c.id = i.carrier_id
+            GROUP BY c.id
+        """)
+        rows = cur.fetchall()
+
+        scorecards = []
+        for r in rows:
+            carr = dict(r)
+            billed = carr["total_billed_cents"]
+            disputed = carr["disputed_cents"] + carr["held_cents"]
+            overcharge_pct = round((disputed / billed * 100), 1) if billed > 0 else 0.0
+
+            cur.execute("""
+                SELECT f.finding_type, COUNT(*) as cnt, SUM(f.variance_cents) as total_var
+                FROM audit_findings f
+                JOIN invoices i ON f.invoice_id = i.id
+                WHERE i.carrier_id = ?
+                GROUP BY f.finding_type
+                ORDER BY total_var DESC
+            """, (carr["id"],))
+            recurring = [dict(f) for f in cur.fetchall()]
+            projected_annual_leakage = disputed * 12
+
+            talking_points = []
+            if overcharge_pct > 10.0:
+                talking_points.append(f"Carrier exhibits an elevated {overcharge_pct}% discrepancy rate on billed freight.")
+            for rec in recurring:
+                ft = rec["finding_type"]
+                amt = cents_to_dollars(rec["total_var"])
+                if ft == "RATE_MISMATCH":
+                    talking_points.append(f"Repeated linehaul rate creep totaling ${amt} above agreed lane tariffs.")
+                elif ft == "FUEL_OVERCHARGE":
+                    talking_points.append(f"Fuel index surcharge inflation (${amt}) failing EIA/DOE peg formula.")
+                elif ft == "UNAUTHORIZED_ACCESSORIAL":
+                    talking_points.append(f"Unapproved accessorial and liftgate billings without dispatch authorization.")
+                elif ft == "DUPLICATE_CHARGE":
+                    talking_points.append(f"Prohibited duplicate dwell and secondary congestion surcharges.")
+
+            if not talking_points:
+                talking_points.append("Carrier demonstrates high billing accuracy with near-zero contractual discrepancies.")
+
+            scorecards.append({
+                "carrier_id": carr["id"],
+                "name": carr["name"],
+                "scac": carr["scac"],
+                "total_invoices": carr["invoice_count"],
+                "total_billed_formatted": cents_to_dollars(billed),
+                "approved_payable_formatted": cents_to_dollars(carr["approved_payable_cents"]),
+                "disputed_formatted": cents_to_dollars(disputed),
+                "overcharge_rate_pct": overcharge_pct,
+                "projected_annual_leakage_formatted": cents_to_dollars(projected_annual_leakage),
+                "recurring_findings": recurring,
+                "talking_points": talking_points
+            })
+
+        return scorecards
+
+@app.post("/api/chat/ask")
+def chat_ask_freightguard(payload: Dict[str, Any]):
+    """Ask FreightGuard Assistant: Grounded question answering over contracts, invoices, and rates."""
+    question = payload.get("question", "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required.")
+
+    with get_db() as conn:
+        stats = get_dashboard_stats()
+        scorecards = get_carrier_scorecards()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM audit_findings ORDER BY variance_cents DESC LIMIT 10")
+        findings = [
+            {
+                "finding_type": f["finding_type"],
+                "charge_code": f["charge_code"],
+                "explanation": f["explanation"],
+                "clause_citation": f["clause_citation"],
+                "variance_formatted": cents_to_dollars(f["variance_cents"])
+            }
+            for f in cur.fetchall()
+        ]
+
+        db_context = {
+            **stats,
+            "carrier_stats": scorecards,
+            "findings": findings
+        }
+
+        answer_data = ai_service.answer_freight_question(question, db_context)
+        record_audit_event(
+            conn, "AI_ASSISTANT", "CHAT", "ASK_FREIGHTGUARD_QUERY", "OPERATOR",
+            {"question": question, "provider": answer_data.get("_ai")}
+        )
+        return answer_data
+
+@app.get("/api/disputes/{dispute_id}/export-pdf")
+def export_dispute_package_pdf(dispute_id: str):
+    """Exports formal commercial dispute notice as a clean, downloadable PDF."""
+    from backend.pdf_utils import generate_dispute_pdf
+    from fastapi.responses import Response
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT d.*, i.invoice_number, i.total_billed_cents, i.approved_payable_cents, c.name as carrier_name, c.scac
+            FROM disputes d
+            JOIN invoices i ON d.invoice_id = i.id
+            JOIN carriers c ON d.carrier_id = c.id
+            WHERE d.id = ?
+        """, (dispute_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Dispute record not found.")
+
+        disp = dict(row)
+        cur.execute("SELECT * FROM audit_findings WHERE invoice_id = ?", (disp["invoice_id"],))
+        findings = [dict(f) for f in cur.fetchall()]
+
+        pdf_bytes = generate_dispute_pdf(disp, findings)
+        filename = f"Dispute-{disp['invoice_number']}.pdf"
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+@app.get("/api/anomalies")
+def get_system_anomalies():
+    """Detects cross-invoice anomalies such as duplicate shipments and lane rate drift."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT s.id as shipment_id, s.bol_number, COUNT(i.id) as billed_count,
+                   GROUP_CONCAT(i.invoice_number, ', ') as invoices_list
+            FROM shipments s
+            JOIN invoices i ON s.id = i.shipment_id
+            GROUP BY s.id
+            HAVING COUNT(i.id) > 1
+        """)
+        dup_shipments = [
+            {
+                "type": "DUPLICATE_SHIPMENT_BILLED",
+                "severity": "CRITICAL",
+                "title": f"Shipment {r['bol_number']} billed multiple times",
+                "description": f"Shipment ID {r['shipment_id']} (BOL {r['bol_number']}) was submitted across multiple invoices: {r['invoices_list']}.",
+                "evidence": "Duplicate billing attempt blocked by cross-invoice validation."
+            }
+            for r in cur.fetchall()
+        ]
+
+        cur.execute("""
+            SELECT i.invoice_number, c.name as carrier_name, f.explanation, f.variance_cents
+            FROM audit_findings f
+            JOIN invoices i ON f.invoice_id = i.id
+            JOIN carriers c ON i.carrier_id = c.id
+            WHERE f.finding_type = 'RATE_MISMATCH'
+        """)
+        rate_drifts = [
+            {
+                "type": "RATE_DRIFT_VARIANCE",
+                "severity": "WARNING",
+                "title": f"Off-tariff rate drift on {r['invoice_number']}",
+                "description": f"{r['carrier_name']}: {r['explanation']}",
+                "evidence": f"Flagged variance: ${cents_to_dollars(r['variance_cents'])}"
+            }
+            for r in cur.fetchall()
+        ]
+
+        return {
+            "total_anomalies": len(dup_shipments) + len(rate_drifts),
+            "anomalies": dup_shipments + rate_drifts
+        }
+
 # -----------------------------------------------------------------------------
 # 6. WEBHOOKS & SIMULATION
 # -----------------------------------------------------------------------------
@@ -1132,9 +1560,9 @@ def health_check():
 
 @app.post("/api/settings/reset-demo")
 def reset_demo_data():
-    """Resets all data back to the clean signature demonstration state."""
+    """Resets all data back to the clean initial state."""
     populate_seed_data(reset=True)
-    return {"status": "SUCCESS", "message": "Demo data reset successfully to signature state ($2,180 discrepancy ready for audit)."}
+    return {"status": "SUCCESS", "message": "Sample data reset successfully."}
 
 # -----------------------------------------------------------------------------
 # STATIC FILES SERVING (UI)

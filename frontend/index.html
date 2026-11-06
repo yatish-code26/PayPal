@@ -3,35 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FreightGuard — Autonomous Freight Invoice Audit & PayPal Settlement</title>
+  <title>FreightGuard — Freight invoice audit and safe payments</title>
   <link rel="stylesheet" href="/static/styles/main.css">
   <link rel="stylesheet" href="/static/styles/components.css">
 </head>
 <body>
   <div id="app-container">
-    <!-- Sidebar -->
+    <!-- Slim Sidebar Navigation -->
     <aside id="sidebar">
       <div class="brand-section">
         <div class="brand-icon">FG</div>
         <div class="brand-text">
           <h1>FreightGuard</h1>
-          <span>PayPal Hackathon</span>
+          <span>Freight invoice audit and safe payments</span>
         </div>
       </div>
 
       <nav class="nav-menu">
-        <a class="nav-item active" data-view="control-tower">
+        <div class="nav-section-title">Operations</div>
+        <a class="nav-item active" data-view="home">
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
           </span>
-          <span>Control Tower</span>
+          <span>Home</span>
         </a>
 
         <a class="nav-item" data-view="invoices">
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           </span>
-          <span>Invoice Intelligence</span>
+          <span>Invoices</span>
           <span class="nav-badge badge-warning" id="sidebar-invoice-badge">5</span>
         </a>
 
@@ -39,28 +40,36 @@
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </span>
-          <span>Evidence Workbench</span>
+          <span>Invoice Detail</span>
         </a>
 
         <a class="nav-item" data-view="disputes">
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
           </span>
-          <span>Dispute Center</span>
+          <span>Disputes</span>
         </a>
 
-        <a class="nav-item" data-view="settlement">
+        <a class="nav-item" data-view="payments">
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
           </span>
-          <span>Settlement Center</span>
+          <span>Payments</span>
         </a>
 
-        <a class="nav-item" data-view="audit-trail">
+        <a class="nav-item" data-view="scorecards">
+          <span class="nav-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"></path></svg>
+          </span>
+          <span>Carrier Scorecards</span>
+        </a>
+
+        <div class="nav-section-title">System</div>
+        <a class="nav-item" data-view="activity">
           <span class="nav-icon">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
           </span>
-          <span>Agent & Audit Trail</span>
+          <span>Activity</span>
         </a>
 
         <a class="nav-item" data-view="settings">
@@ -72,184 +81,204 @@
       </nav>
 
       <div class="sidebar-footer">
-        <div class="mode-indicator">
-          <span>Sandbox Gateway</span>
-          <span class="mode-pill">
-            <span class="pulse-dot"></span>
-            <span id="sidebar-mode-text">LOCAL DEMO</span>
-          </span>
+        <div class="status-indicator">
+          <span class="pulse-dot"></span>
+          <span id="sidebar-mode-text">Built-in Sandbox</span>
         </div>
       </div>
     </aside>
 
     <!-- Main Content Area -->
     <main id="main-wrapper">
-      <!-- App Header -->
+      <!-- Top Bar: Title, Search (Ctrl+K), Role Dropdown, Single Primary Action -->
       <header id="top-header">
         <div class="header-left">
-          <div class="breadcrumbs">
-            <span>FreightGuard</span>
-            <span>/</span>
-            <span class="breadcrumb-active" id="current-view-title">Control Tower</span>
-          </div>
-
-          <!-- Active User Role Switcher -->
-          <div class="role-switcher-wrap" id="header-role-switcher" title="Active Simulated User & Financial Approval Authority">
-            <button class="role-pill-btn active" data-email="clerk@freightguard.internal" data-role="CLERK">AP Clerk</button>
-            <button class="role-pill-btn" data-email="sarah.chen@shipper.internal" data-role="APPROVER_1">Approver 1 (Sarah)</button>
-            <button class="role-pill-btn" data-email="david.ross@shipper.internal" data-role="APPROVER_2">Approver 2 (David)</button>
+          <h2 class="page-title" id="current-view-title">Home</h2>
+          <div class="search-trigger" id="global-search-trigger" title="Open command palette (Ctrl+K)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span>Search or jump to...</span>
+            <span class="kbd-shortcut">Ctrl K</span>
           </div>
         </div>
 
         <div class="header-right">
-          <span class="badge badge-info" id="ai-status-badge">AI: LOCAL_DETERMINISTIC</span>
-          <span class="badge badge-clean" id="gateway-status-badge">PayPal: LOCAL_DEMO</span>
+          <!-- Role Switcher Dropdown -->
+          <div class="user-menu" id="user-menu-container">
+            <button class="user-menu-btn" id="btn-user-dropdown" type="button">
+              <span class="user-avatar" id="header-user-avatar">SC</span>
+              <span id="header-user-label">Signed in as Sarah (AP Clerk)</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="user-dropdown-menu" id="user-dropdown-list">
+              <div class="dropdown-header">Switch Simulated Role</div>
+              <div class="dropdown-item active" data-email="clerk@freightguard.internal" data-role="CLERK">
+                <span class="dropdown-item-title">Sarah Chen</span>
+                <span class="dropdown-item-sub">AP Clerk &bull; Invoice Ingestion</span>
+              </div>
+              <div class="dropdown-item" data-email="sarah.chen@shipper.internal" data-role="APPROVER_1">
+                <span class="dropdown-item-title">Sarah Chen (Manager)</span>
+                <span class="dropdown-item-sub">First Approver &bull; Financial Signoff</span>
+              </div>
+              <div class="dropdown-item" data-email="david.ross@shipper.internal" data-role="APPROVER_2">
+                <span class="dropdown-item-title">David Ross</span>
+                <span class="dropdown-item-sub">Second Approver &bull; Controller Signoff</span>
+              </div>
+            </div>
+          </div>
 
-          <button class="btn btn-secondary btn-sm" id="btn-theme-toggle" title="Toggle Light/Dark Theme">🌓</button>
+          <!-- Theme Toggle -->
+          <button class="btn btn-secondary btn-sm" id="btn-theme-toggle" title="Toggle theme">🌓</button>
 
-          <button class="btn btn-secondary btn-sm" id="btn-open-upload-modal" title="Upload and parse freight invoice PDF or text">
+          <!-- Primary Page Action -->
+          <button class="btn btn-primary btn-sm" id="btn-primary-action">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-            Upload Bill
-          </button>
-
-          <button class="btn btn-secondary btn-sm" id="btn-reset-demo" title="Reset dataset to initial state">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
-            Reset
-          </button>
-          <button class="btn btn-primary btn-sm" id="btn-quick-run-demo">
-            Execute $2,180 Signature Audit
+            <span>Upload Invoice</span>
           </button>
         </div>
       </header>
 
-      <!-- Signature Demo Guide Bar -->
-      <div class="demo-banner">
-        <div class="demo-banner-content">
-          <span class="demo-tag">Guided Demo</span>
-          <span>Signature Scenario: <strong>Apex Global Freight (INV-2025-88419)</strong> billed $5,522.00 with $2,180.00 in uncontracted charges.</span>
-        </div>
-        <div style="display: flex; gap: 8px;">
-          <button class="btn btn-primary btn-sm" id="btn-start-guided-tour" style="background: linear-gradient(135deg, #00e5ff 0%, #10b981 100%); color: #050811;">
-            ▶ 3-Min Automated Demo
-          </button>
-          <button class="btn btn-secondary btn-sm" onclick="App.navigateTo('workbench', 'INV-2025-88419')">Open Workbench</button>
-          <button class="btn btn-secondary btn-sm" onclick="App.navigateTo('settlement', 'INV-2025-88419')">Go to Settlement</button>
-        </div>
-      </div>
-
-      <!-- Views Container -->
+      <!-- View Containers -->
       <div id="view-container">
-        <!-- 1. Executive Control Tower -->
-        <section id="view-control-tower" class="view-section active">
-          <div class="page-header">
-            <div class="page-title-group">
-              <h2>Executive Freight Financial Control Tower</h2>
-              <p>Autonomous Freight Audit, Evidence Intelligence & Deterministic PayPal Settlement</p>
+
+        <!-- 1. HOME VIEW -->
+        <section id="view-home" class="view-section active">
+          <!-- Attention Queue First -->
+          <div class="attention-queue-container">
+            <div class="attention-queue-header">
+              <div class="attention-queue-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>Needs Your Attention</span>
+              </div>
+              <span class="attention-badge-count" id="attention-total-badge">3 Tasks</span>
             </div>
-            <div class="page-actions">
-              <span class="badge badge-info" id="audit-coverage-badge">Audit Coverage: 80%</span>
+
+            <div class="attention-queue-grid">
+              <!-- Invoices to review -->
+              <div class="attention-col">
+                <div class="attention-col-header">
+                  <span class="attention-col-title">Invoices to Review</span>
+                  <span class="badge badge-warning" id="count-invoices-review">1</span>
+                </div>
+                <div class="attention-item-list" id="list-invoices-review">
+                  <!-- Injected via JS -->
+                </div>
+              </div>
+
+              <!-- Disputes awaiting reply -->
+              <div class="attention-col">
+                <div class="attention-col-header">
+                  <span class="attention-col-title">Disputes Awaiting Reply</span>
+                  <span class="badge badge-warning" id="count-disputes-reply">1</span>
+                </div>
+                <div class="attention-item-list" id="list-disputes-reply">
+                  <!-- Injected via JS -->
+                </div>
+              </div>
+
+              <!-- Payments awaiting approval -->
+              <div class="attention-col">
+                <div class="attention-col-header">
+                  <span class="attention-col-title">Payments Awaiting Approval</span>
+                  <span class="badge badge-info" id="count-payments-approval">1</span>
+                </div>
+                <div class="attention-item-list" id="list-payments-approval">
+                  <!-- Injected via JS -->
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="metrics-grid">
-            <div class="metric-card">
-              <div class="metric-header">
-                <span class="metric-title">Total Invoices Received</span>
-                <span class="badge badge-info" id="metric-total-invoices">5 Invoices</span>
+          <!-- 4 Big KPI Cards -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-label">Total Billed</span>
+                <span class="badge badge-neutral" id="kpi-total-invoices">5 Invoices</span>
               </div>
-              <div class="metric-value amount" id="metric-total-billed">$19,734.00</div>
-              <div class="metric-subtext">Cumulative freight billed</div>
+              <div class="kpi-amount amount" id="kpi-billed">$19,734.00</div>
+              <div class="kpi-subtext">Cumulative freight bills audited</div>
             </div>
 
-            <div class="metric-card accent-card">
-              <div class="metric-header">
-                <span class="metric-title">Verified Legitimate Payable</span>
+            <div class="kpi-card accent-approved">
+              <div class="kpi-header">
+                <span class="kpi-label">Approved to Pay</span>
                 <span class="badge badge-clean">Verified</span>
               </div>
-              <div class="metric-value amount" id="metric-verified-payable" style="color: var(--accent-cyan);">$11,392.00</div>
-              <div class="metric-subtext">Deterministic contract match</div>
+              <div class="kpi-amount amount" id="kpi-approved">$11,042.00</div>
+              <div class="kpi-subtext">Contract-compliant balances</div>
             </div>
 
-            <div class="metric-card warning-card">
-              <div class="metric-header">
-                <span class="metric-title">Detected Disputed Overcharges</span>
-                <span class="badge badge-discrepancy" id="metric-exception-rate">Exception Rate</span>
+            <div class="kpi-card accent-disputed">
+              <div class="kpi-header">
+                <span class="kpi-label">Disputed Overcharges</span>
+                <span class="badge badge-discrepancy" id="kpi-exception-rate">Overcharges</span>
               </div>
-              <div class="metric-value amount" id="metric-detected-disputed" style="color: var(--status-warning);">$8,342.00</div>
-              <div class="metric-subtext">Prevented unauthorized leakage</div>
+              <div class="kpi-amount amount" id="kpi-disputed">$3,170.00</div>
+              <div class="kpi-subtext">Prevented unauthorized leakage</div>
             </div>
 
-            <div class="metric-card success-card">
-              <div class="metric-header">
-                <span class="metric-title">Confirmed Recovered / Credited</span>
-                <span class="badge badge-clean">Realized</span>
+            <div class="kpi-card accent-saved">
+              <div class="kpi-header">
+                <span class="kpi-label">Recovered & Held</span>
+                <span class="badge badge-clean">Protected</span>
               </div>
-              <div class="metric-value amount" id="metric-confirmed-recovered" style="color: var(--status-success);">$450.00</div>
-              <div class="metric-subtext">Evidenced carrier credit notes</div>
-            </div>
-
-            <div class="metric-card">
-              <div class="metric-header">
-                <span class="metric-title">PayPal Sandbox Payouts</span>
-                <span class="badge badge-purple">Settled</span>
-              </div>
-              <div class="metric-value amount" id="metric-successful-payouts">$1,850.00</div>
-              <div class="metric-subtext">Reconciled via PayPal Payouts</div>
+              <div class="kpi-amount amount" id="kpi-saved">$5,522.00</div>
+              <div class="kpi-subtext">Credit notes & held reserves</div>
             </div>
           </div>
 
-          <!-- Charts Row -->
-          <div class="workbench-grid" style="margin-bottom: 24px;">
-            <div class="panel-card">
-              <div class="panel-header">
-                <span class="panel-title">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-                  Financial Exposure & Discrepancy Breakdown
-                </span>
-                <span class="badge badge-info">Persistent DB</span>
-              </div>
-              <div class="chart-container" id="chart-discrepancy-breakdown">
-                <!-- Dynamic SVG injected via JS -->
-              </div>
+          <!-- Financial Reconciliation Breakdown -->
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <span class="chart-card-title">Financial Exposure & Reconciliation</span>
+              <span class="badge badge-clean" id="invariant-badge">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Invariant Reconciles in Cents
+              </span>
             </div>
-
-            <div class="panel-card">
-              <div class="panel-header">
-                <span class="panel-title">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
-                  Audit Velocity & Settlement State Machine
-                </span>
-                <span class="badge badge-clean">Invariants Enforced</span>
+            <div class="proportion-bar-container" id="proportion-bar">
+              <div class="proportion-segment approved" style="width: 55.9%;" title="Approved to Pay: $11,042.00"></div>
+              <div class="proportion-segment disputed" style="width: 16.1%;" title="Disputed Overcharges: $3,170.00"></div>
+              <div class="proportion-segment held" style="width: 28.0%;" title="Held in Reserve: $5,522.00"></div>
+            </div>
+            <div class="chart-legend-grid">
+              <div class="legend-item">
+                <span class="legend-color-dot" style="background-color: var(--status-success);"></span>
+                <span>Approved Payable: <strong class="amount" id="legend-approved">$11,042.00</strong></span>
               </div>
-              <div class="chart-container" id="chart-audit-velocity">
-                <!-- Dynamic SVG injected via JS -->
+              <div class="legend-item">
+                <span class="legend-color-dot" style="background-color: var(--status-warning);"></span>
+                <span>Disputed Overcharges: <strong class="amount" id="legend-disputed">$3,170.00</strong></span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-color-dot" style="background-color: var(--accent-primary);"></span>
+                <span>Held in Reserve: <strong class="amount" id="legend-held">$5,522.00</strong></span>
               </div>
             </div>
           </div>
 
-          <!-- Recent Invoices Table in Control Tower -->
+          <!-- Priority Invoices Stream -->
           <div class="table-card">
-            <div class="table-card-header">
-              <span class="table-card-title">Priority Freight Invoice Stream</span>
+            <div class="table-header-bar">
+              <span style="font-weight: 700; font-size: 14px;">Recent Invoices</span>
               <button class="btn btn-secondary btn-sm" onclick="App.navigateTo('invoices')">View All Invoices</button>
             </div>
             <div class="table-responsive">
-              <table class="data-table" id="dashboard-invoices-table">
+              <table class="data-table">
                 <thead>
                   <tr>
                     <th>Invoice ID</th>
                     <th>Carrier</th>
-                    <th>Shipment / BOL</th>
                     <th>Date</th>
-                    <th>Billed Total</th>
-                    <th>Verified Payable</th>
-                    <th>Flagged Discrepancy</th>
+                    <th style="text-align: right;">Billed</th>
+                    <th style="text-align: right;">Approved</th>
+                    <th style="text-align: right;">Disputed</th>
                     <th>Audit Status</th>
-                    <th>Settlement Status</th>
-                    <th>Actions</th>
+                    <th>Payment</th>
+                    <th style="text-align: right;">Action</th>
                   </tr>
                 </thead>
-                <tbody id="dashboard-invoices-tbody">
+                <tbody id="home-invoices-tbody">
                   <!-- Populated by JS -->
                 </tbody>
               </table>
@@ -257,20 +286,20 @@
           </div>
         </section>
 
-        <!-- 2. Invoice Intelligence View -->
+        <!-- 2. INVOICES VIEW -->
         <section id="view-invoices" class="view-section">
-          <div class="page-header">
-            <div class="page-title-group">
-              <h2>Invoice Intelligence & Ingestion Queue</h2>
-              <p>Search, inspect line-item breakdowns, and trigger autonomous audits.</p>
+          <div class="page-header-row">
+            <div>
+              <h2 class="page-heading">Invoices</h2>
+              <p class="page-subheading">All freight bills ingested for contract audit and settlement.</p>
             </div>
-            <div class="page-actions">
-              <input type="text" id="invoice-search-input" class="form-input" placeholder="Search by Invoice, Carrier, or BOL..." style="width: 280px;">
-              <select id="invoice-status-filter" class="form-select" style="width: 180px;">
-                <option value="">All Audit Statuses</option>
-                <option value="PENDING_AUDIT">Pending Audit</option>
-                <option value="AUDITED_DISCREPANCY">Audited (Discrepancy)</option>
-                <option value="AUDITED_CLEAN">Audited (Clean)</option>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="invoice-search-input" class="form-input" placeholder="Search invoice, carrier, BOL..." style="width: 260px;">
+              <select id="invoice-status-filter" class="form-select">
+                <option value="">All Statuses</option>
+                <option value="PENDING_AUDIT">Pending Review</option>
+                <option value="AUDITED_DISCREPANCY">Discrepancy</option>
+                <option value="AUDITED_CLEAN">Clean</option>
                 <option value="DISPUTED">Disputed</option>
                 <option value="BLOCKED">Blocked</option>
               </select>
@@ -279,22 +308,22 @@
 
           <div class="table-card">
             <div class="table-responsive">
-              <table class="data-table" id="full-invoices-table">
+              <table class="data-table">
                 <thead>
                   <tr>
                     <th>Invoice ID</th>
                     <th>Carrier</th>
-                    <th>Lane / Route</th>
-                    <th>BOL Reference</th>
-                    <th>Billed Amount</th>
-                    <th>Verified Payable</th>
-                    <th>Disputed Variance</th>
+                    <th>Route / BOL</th>
+                    <th>Date</th>
+                    <th style="text-align: right;">Billed</th>
+                    <th style="text-align: right;">Approved</th>
+                    <th style="text-align: right;">Disputed</th>
                     <th>Audit Status</th>
-                    <th>Settlement</th>
-                    <th>Audit & Review</th>
+                    <th>Payment Status</th>
+                    <th style="text-align: right;">Actions</th>
                   </tr>
                 </thead>
-                <tbody id="full-invoices-tbody">
+                <tbody id="invoices-tbody">
                   <!-- Populated by JS -->
                 </tbody>
               </table>
@@ -302,16 +331,52 @@
           </div>
         </section>
 
-        <!-- 3. Evidence Workbench View -->
+        <!-- 3. WORKBENCH / INVOICE DETAIL VIEW -->
         <section id="view-workbench" class="view-section">
-          <div class="page-header">
-            <div class="page-title-group">
-              <h2>Evidence Workbench — Deep Audit Traceability</h2>
-              <p>Cross-reference billed line items against contractual tariffs and telematics evidence.</p>
+          <!-- Stepper along top -->
+          <div class="stepper-bar" id="workbench-stepper">
+            <div class="step-item completed" id="step-1">
+              <div class="step-num">1</div>
+              <span class="step-title">Review & Audit</span>
             </div>
-            <div class="page-actions">
+            <div class="step-divider filled" id="step-div-1"></div>
+            <div class="step-item active" id="step-2">
+              <div class="step-num">2</div>
+              <span class="step-title">Dispute</span>
+            </div>
+            <div class="step-divider" id="step-div-2"></div>
+            <div class="step-item" id="step-3">
+              <div class="step-num">3</div>
+              <span class="step-title">Dual Approval</span>
+            </div>
+            <div class="step-divider" id="step-div-3"></div>
+            <div class="step-item" id="step-4">
+              <div class="step-num">4</div>
+              <span class="step-title">PayPal Settlement</span>
+            </div>
+            <div class="step-divider" id="step-div-4"></div>
+            <div class="step-item" id="step-5">
+              <div class="step-num">5</div>
+              <span class="step-title">Reconciled</span>
+            </div>
+          </div>
+
+          <div class="page-header-row">
+            <div>
+              <h2 class="page-heading">Invoice Detail & Audit Findings</h2>
+              <p class="page-subheading" id="workbench-subtitle">Line-by-line verification against Master Service Agreement and telematics.</p>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
               <select id="workbench-invoice-select" class="form-select" style="width: 240px;"></select>
-              <button class="btn btn-primary btn-sm" id="btn-workbench-run-audit">Execute Autonomous Audit</button>
+              <button class="btn btn-secondary btn-sm" id="btn-workbench-run-audit">Re-run Audit</button>
+            </div>
+          </div>
+
+          <!-- Policy Engine Protection Banner -->
+          <div class="policy-guard-banner">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+              <span><strong>Policy Guard Active:</strong> AI drafts letters and explains findings, but all dollar calculations are deterministic in exact cents. AI changes to money are rejected.</span>
             </div>
           </div>
 
@@ -320,15 +385,15 @@
           </div>
         </section>
 
-        <!-- 4. Dispute Center View -->
+        <!-- 4. DISPUTES VIEW -->
         <section id="view-disputes" class="view-section">
-          <div class="page-header">
-            <div class="page-title-group">
-              <h2>Carrier Dispute Center</h2>
-              <p>Evidence-grounded formal dispute generation, carrier communication, and credit note tracking.</p>
+          <div class="page-header-row">
+            <div>
+              <h2 class="page-heading">Disputes</h2>
+              <p class="page-subheading">Contract-grounded dispute notices, PDF exports, and carrier credit resolutions.</p>
             </div>
-            <div class="page-actions">
-              <button class="btn btn-primary btn-sm" id="btn-generate-dispute-active">Generate Formal Dispute Notice</button>
+            <div>
+              <button class="btn btn-primary btn-sm" id="btn-generate-dispute-active">Generate Dispute Notice</button>
             </div>
           </div>
 
@@ -337,14 +402,14 @@
           </div>
         </section>
 
-        <!-- 5. Settlement Center View -->
-        <section id="view-settlement" class="view-section">
-          <div class="page-header">
-            <div class="page-title-group">
-              <h2>PayPal Settlement Center & Financial Controls</h2>
-              <p>Deterministic authorization, two-man signoff, and PayPal Payouts execution.</p>
+        <!-- 5. PAYMENTS VIEW -->
+        <section id="view-payments" class="view-section">
+          <div class="page-header-row">
+            <div>
+              <h2 class="page-heading">Payments & PayPal Settlement</h2>
+              <p class="page-subheading">Two-person segregation of duties, payout execution, and webhook reconciliation.</p>
             </div>
-            <div class="page-actions">
+            <div>
               <select id="settlement-invoice-select" class="form-select" style="width: 240px;"></select>
             </div>
           </div>
@@ -354,28 +419,49 @@
           </div>
         </section>
 
-        <!-- 6. Audit & Agent Activity View -->
-        <section id="view-audit-trail" class="view-section">
-          <div class="page-header">
-            <div class="page-title-group">
-              <h2>Audit & Agent Activity Trail</h2>
-              <p>Chronological, immutable event log of all autonomous and human actions.</p>
+        <!-- 6. CARRIER SCORECARDS VIEW -->
+        <section id="view-scorecards" class="view-section">
+          <div class="page-header-row">
+            <div>
+              <h2 class="page-heading">Carrier Scorecards & Renewal Intelligence</h2>
+              <p class="page-subheading">Overcharge frequency, recurring violations, and automated negotiation talking points.</p>
             </div>
-            <div class="page-actions">
+          </div>
+
+          <div id="scorecards-content">
+            <!-- Populated by JS -->
+          </div>
+        </section>
+
+        <!-- 7. ACTIVITY VIEW -->
+        <section id="view-activity" class="view-section">
+          <div class="page-header-row">
+            <div>
+              <h2 class="page-heading">Activity & Audit Trail</h2>
+              <p class="page-subheading">Append-only, SHA-256 hash-chained event log with tamper verification.</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-secondary btn-sm" id="btn-verify-audit-chain">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                Verify Log Integrity
+              </button>
               <button class="btn btn-secondary btn-sm" id="btn-refresh-audit-events">Refresh Log</button>
             </div>
           </div>
 
+          <div id="integrity-verification-alert" style="margin-bottom: 16px;"></div>
+
           <div class="table-card">
             <div class="table-responsive">
-              <table class="data-table" id="audit-events-table">
+              <table class="data-table">
                 <thead>
                   <tr>
                     <th>Timestamp</th>
-                    <th>Event Type</th>
-                    <th>Entity</th>
+                    <th>Action</th>
+                    <th>Target</th>
                     <th>Actor</th>
-                    <th>Details & Payload</th>
+                    <th>SHA-256 Hash</th>
+                    <th>Details</th>
                   </tr>
                 </thead>
                 <tbody id="audit-events-tbody">
@@ -386,12 +472,12 @@
           </div>
         </section>
 
-        <!-- 7. Settings View -->
+        <!-- 8. SETTINGS VIEW -->
         <section id="view-settings" class="view-section">
-          <div class="page-header">
-            <div class="page-title-group">
-              <h2>System Settings & Diagnostics</h2>
-              <p>Verify integration boundaries, operational mode, and SQLite database health.</p>
+          <div class="page-header-row">
+            <div>
+              <h2 class="page-heading">Settings & Integrations</h2>
+              <p class="page-subheading">Built-in operational modes, environment diagnostics, and data controls.</p>
             </div>
           </div>
 
@@ -399,11 +485,62 @@
             <!-- Populated by JS -->
           </div>
         </section>
+
       </div>
     </main>
   </div>
 
-  <!-- Reusable Modal Container -->
+  <!-- Floating Ask FreightGuard Chat Drawer -->
+  <button class="floating-chat-btn" id="btn-toggle-chat" title="Ask FreightGuard in natural language">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+    <span>Ask FreightGuard</span>
+  </button>
+
+  <aside class="chat-drawer" id="chat-drawer">
+    <div class="chat-drawer-header">
+      <div class="chat-drawer-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        <span>Ask FreightGuard</span>
+      </div>
+      <button class="modal-close" id="btn-close-chat">&times;</button>
+    </div>
+
+    <div class="chat-messages-container" id="chat-messages">
+      <div class="chat-bubble assistant">
+        Hello! I am your FreightGuard assistant. Ask me questions about audited invoices, contract clauses, carrier discrepancies, or settlement positions.
+      </div>
+    </div>
+
+    <div class="chat-suggestions-row">
+      <span class="suggestion-chip" onclick="App.askSuggested('Why was INV-2025-88419 disputed?')">Why was 88419 disputed?</span>
+      <span class="suggestion-chip" onclick="App.askSuggested('Which carrier has the highest error rate?')">Carrier error rates?</span>
+      <span class="suggestion-chip" onclick="App.askSuggested('What are our total savings?')">Total savings?</span>
+    </div>
+
+    <div class="chat-input-bar">
+      <input type="text" id="chat-input" class="form-input" style="flex: 1;" placeholder="Ask a question..." />
+      <button class="btn btn-primary btn-sm" id="btn-send-chat">Send</button>
+    </div>
+  </aside>
+
+  <!-- Command Palette Modal (Ctrl+K) -->
+  <div class="command-palette-overlay" id="command-palette-overlay">
+    <div class="command-palette-modal">
+      <div class="palette-search-bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" class="palette-input" id="palette-search-input" placeholder="Type a command or jump to an invoice..." autofocus />
+      </div>
+      <div class="palette-results-list" id="palette-results">
+        <!-- Results injected dynamically -->
+      </div>
+      <div class="palette-footer">
+        <span>Navigation: <kbd class="kbd-shortcut">↑</kbd> <kbd class="kbd-shortcut">↓</kbd> to select</span>
+        <span>Close: <kbd class="kbd-shortcut">Esc</kbd></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reusable Modal (e.g. Upload, Confirmations) -->
   <div class="modal-overlay" id="app-modal">
     <div class="modal-box">
       <div class="modal-header">
@@ -411,15 +548,15 @@
         <button class="modal-close" id="modal-close-btn">&times;</button>
       </div>
       <div class="modal-body" id="modal-body">
-        <!-- Injected via JS -->
+        <!-- Populated via JS -->
       </div>
     </div>
   </div>
 
-  <!-- Toast Container -->
+  <!-- Toast Notification Container -->
   <div id="toast-container"></div>
 
-  <!-- Scripts -->
+  <!-- Application Logic Scripts -->
   <script src="/static/js/api.js"></script>
   <script src="/static/js/control_tower.js"></script>
   <script src="/static/js/invoices.js"></script>
@@ -428,6 +565,7 @@
   <script src="/static/js/settlement.js"></script>
   <script src="/static/js/audit_trail.js"></script>
   <script src="/static/js/settings.js"></script>
+  <script src="/static/js/scorecards.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

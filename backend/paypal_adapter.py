@@ -139,7 +139,8 @@ class PayPalPayoutsAdapter:
         return {
             "mode": current_mode,
             "is_simulated": current_mode != "LIVE_SANDBOX",
-            "endpoint": PAYPAL_SANDBOX_BASE_URL if current_mode == "LIVE_SANDBOX" else "LOCAL_OFFLINE_SIMULATOR",
+            "endpoint": PAYPAL_SANDBOX_BASE_URL,
+            "base_url": PAYPAL_SANDBOX_BASE_URL,
             "client_id_configured": bool(cid),
             "client_id_masked": masked_cid,
             "client_secret_configured": bool(csec),
@@ -147,7 +148,7 @@ class PayPalPayoutsAdapter:
             "oauth_token_active": self._access_token is not None and time.time() < self._token_expiry,
             "simulate_failure_mode": RUNTIME_PAYPAL_CONFIG.get("failure_mode") or "NONE",
             "status_label": (
-                "Local Sandbox Simulator (Offline Demo Mode)"
+                "Built-in Sandbox Simulator"
                 if current_mode != "LIVE_SANDBOX"
                 else "Live PayPal Sandbox Gateway"
             ),

@@ -206,7 +206,9 @@ def init_db() -> None:
             event_name TEXT NOT NULL,
             actor TEXT NOT NULL,
             details_json TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            prev_hash TEXT,
+            event_hash TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_invoices_carrier ON invoices(carrier_id);
@@ -218,14 +220,75 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_audit_events_entity ON audit_events(entity_id);
         """)
 
-def record_audit_event(conn: sqlite3.Connection, entity_type: str, entity_id: str, event_name: str, actor: str, details: dict) -> None:
-    """Helper to record an immutable audit event."""
+def record_audit_event(conn: sqlite3.Connection, entity_type: str, entity_id: str, event_name: str, actor: str, details: dict) -> str:
+    """Helper to record an immutable, hash-chained audit event."""
     import uuid
+    import hashlib
     from datetime import datetime, timezone
+    
     event_id = f"aud_{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
+    details_str = json.dumps(details, sort_keys=True)
+
+    # Fetch previous event's hash for hash-chaining
+    cur = conn.cursor()
+    cur.execute("SELECT event_hash FROM audit_events ORDER BY rowid DESC LIMIT 1")
+    last_row = cur.fetchone()
+    prev_hash = last_row["event_hash"] if (last_row and last_row["event_hash"]) else "GENESIS_FREIGHTGUARD_00000000000000000000000000000000"
+
+    raw_signature = f"{prev_hash}|{event_id}|{entity_type}|{entity_id}|{event_name}|{actor}|{now}|{details_str}"
+    event_hash = hashlib.sha256(raw_signature.encode("utf-8")).hexdigest()
+
     conn.execute(
-        """INSERT INTO audit_events (id, entity_type, entity_id, event_name, actor, details_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (event_id, entity_type, entity_id, event_name, actor, json.dumps(details), now)
+        """INSERT INTO audit_events (id, entity_type, entity_id, event_name, actor, details_json, created_at, prev_hash, event_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (event_id, entity_type, entity_id, event_name, actor, details_str, now, prev_hash, event_hash)
     )
+    return event_id
+
+def verify_audit_chain_integrity(conn: sqlite3.Connection) -> dict:
+    """Walks the complete audit trail and cryptographically verifies the hash chain."""
+    import hashlib
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM audit_events ORDER BY rowid ASC")
+    rows = cur.fetchall()
+
+    if not rows:
+        return {"valid": True, "total_events": 0, "message": "Audit log is empty."}
+
+    expected_prev = "GENESIS_FREIGHTGUARD_00000000000000000000000000000000"
+    verified_count = 0
+
+    for r in rows:
+        # Check prev_hash linkage
+        if r["prev_hash"] != expected_prev:
+            return {
+                "valid": False,
+                "tampered_event_id": r["id"],
+                "total_events": len(rows),
+                "verified_count": verified_count,
+                "reason": f"Hash chain break at event {r['id']}: expected prev_hash {expected_prev}, got {r['prev_hash']}"
+            }
+        
+        # Verify content hash recalculation
+        raw_sig = f"{r['prev_hash']}|{r['id']}|{r['entity_type']}|{r['entity_id']}|{r['event_name']}|{r['actor']}|{r['created_at']}|{r['details_json']}"
+        calc_hash = hashlib.sha256(raw_sig.encode("utf-8")).hexdigest()
+        if r["event_hash"] != calc_hash:
+            return {
+                "valid": False,
+                "tampered_event_id": r["id"],
+                "total_events": len(rows),
+                "verified_count": verified_count,
+                "reason": f"Content tampering at event {r['id']}: stored hash {r['event_hash']} != calculated hash {calc_hash}"
+            }
+
+        expected_prev = r["event_hash"]
+        verified_count += 1
+
+    return {
+        "valid": True,
+        "total_events": len(rows),
+        "verified_count": verified_count,
+        "head_hash": expected_prev,
+        "message": f"Hash chain valid: verified {verified_count} events from genesis to head."
+    }

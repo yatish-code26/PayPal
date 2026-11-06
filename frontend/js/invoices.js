@@ -1,5 +1,5 @@
 /**
- * Invoices Intelligence View Controller
+ * Invoices View Controller
  * Filters, searches, and provides line-item breakdown with one-click audit actions.
  */
 const InvoicesView = {
@@ -15,10 +15,10 @@ const InvoicesView = {
     const statusFilter = document.getElementById("invoice-status-filter");
 
     if (searchInput) {
-      searchInput.addEventListener("input", () => this.filterAndRender());
+      searchInput.oninput = () => this.filterAndRender();
     }
     if (statusFilter) {
-      statusFilter.addEventListener("change", () => this.filterAndRender());
+      statusFilter.onchange = () => this.filterAndRender();
     }
   },
 
@@ -48,45 +48,42 @@ const InvoicesView = {
   },
 
   renderTable(invoices) {
-    const tbody = document.getElementById("full-invoices-tbody");
+    const tbody = document.getElementById("invoices-tbody");
     if (!tbody) return;
     tbody.innerHTML = "";
 
     if (invoices.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 30px; color: var(--text-muted);">No invoices match selected criteria.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 32px; color: var(--text-muted);">No invoices match selected criteria.</td></tr>`;
       return;
     }
 
     invoices.forEach(inv => {
       const tr = document.createElement("tr");
-      if (inv.id === "INV-2025-88419") {
-        tr.className = "highlighted";
-      }
-
       const auditBadge = App.getAuditStatusBadge(inv.audit_status);
       const settleBadge = App.getSettlementStatusBadge(inv.settlement_status);
 
+      let actionBtn = "";
+      if (inv.audit_status === "PENDING_AUDIT") {
+        actionBtn = `<button class="btn btn-primary btn-sm" onclick="App.navigateTo('workbench', '${inv.id}')">Audit</button>`;
+      } else if (inv.settlement_status === "UNSETTLED" && inv.audit_status !== "BLOCKED") {
+        actionBtn = `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('payments', '${inv.id}')">Authorize</button>`;
+      } else {
+        actionBtn = `<button class="btn btn-secondary btn-sm" onclick="App.navigateTo('workbench', '${inv.id}')">Inspect</button>`;
+      }
+
       tr.innerHTML = `
-        <td class="mono" style="font-weight: 700; color: var(--text-primary);">${inv.invoice_number}</td>
-        <td>
-          <div style="font-weight: 600;">${inv.carrier_name}</div>
-          <div style="font-size: 11px; color: var(--text-muted);">${inv.carrier_scac || 'CARRIER'} &bull; Net 30</div>
-        </td>
-        <td style="font-size: 12px;">${inv.origin && inv.destination ? `${inv.origin} &rarr; ${inv.destination}` : 'Unassigned Lane'}</td>
-        <td class="mono" style="font-size: 12px;">${inv.bol_number || 'N/A'}</td>
-        <td class="amount-cell mono" style="font-weight: 600;">$${inv.total_billed_formatted}</td>
-        <td class="amount-cell mono" style="color: var(--accent-cyan); font-weight: 600;">$${inv.approved_payable_formatted}</td>
-        <td class="amount-cell mono" style="color: ${inv.disputed_amount_cents > 0 ? 'var(--status-warning)' : 'var(--text-muted)'}; font-weight: 600;">
+        <td><strong class="mono">${inv.invoice_number}</strong></td>
+        <td>${inv.carrier_name} <span class="mono" style="color: var(--text-muted); font-size: 11px;">(${inv.carrier_scac || 'CARRIER'})</span></td>
+        <td style="font-size: 12px; color: var(--text-secondary);">${inv.origin || 'ORD'} &rarr; ${inv.destination || 'DFW'}</td>
+        <td style="font-size: 12px; color: var(--text-muted);">${inv.invoice_date}</td>
+        <td class="amount-cell amount">$${inv.total_billed_formatted}</td>
+        <td class="amount-cell amount" style="color: var(--status-success); font-weight: 600;">$${inv.approved_payable_formatted}</td>
+        <td class="amount-cell amount" style="color: ${inv.disputed_amount_cents > 0 ? 'var(--status-warning)' : 'var(--text-muted)'}; font-weight: 600;">
           ${inv.disputed_amount_cents > 0 ? '+$' + inv.disputed_amount_formatted : '$0.00'}
         </td>
         <td>${auditBadge}</td>
         <td>${settleBadge}</td>
-        <td>
-          <div style="display: flex; gap: 6px;">
-            <button class="btn btn-secondary btn-sm" onclick="App.navigateTo('workbench', '${inv.id}')">Workbench</button>
-            <button class="btn btn-primary btn-sm" onclick="App.quickAudit('${inv.id}')">Run Audit</button>
-          </div>
-        </td>
+        <td style="text-align: right;">${actionBtn}</td>
       `;
       tbody.appendChild(tr);
     });
