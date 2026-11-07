@@ -33,7 +33,7 @@ def populate_seed_data(reset: bool = True) -> None:
 
         # 1. CARRIERS
         carriers = [
-            ("carr_apex_01", "Apex Global Freight Logistics", "APXG", "apex-settlement@sandbox.carrier.com", "REC-APXG-01", 1, now_str),
+            ("carr_apex_01", "Apex Global Freight Logistics", "AGFL", "apex-settlement@sandbox.carrier.com", "REC-APXG-01", 1, now_str),
             ("carr_swift_02", "SwiftLine Freight Systems", "SWFT", "settlement@swiftline.example.com", "REC-SWFT-02", 1, now_str),
             ("carr_horizon_03", "Horizon Intermodal Express", "HZNM", "ap@horizon-intermodal.example.com", "REC-HZNM-03", 1, now_str),
             ("carr_titan_04", "Titan Specialized Freight", "TTAN", "billing@titan-freight.example.com", "REC-TTAN-04", 1, now_str),
@@ -308,9 +308,23 @@ def populate_seed_data(reset: bool = True) -> None:
             )
         )
 
+        # 7.5 SEED HISTORICAL DISPUTE
+        conn.execute(
+            """INSERT INTO disputes 
+               (id, invoice_id, dispute_reference, carrier_id, status, disputed_amount_cents, carrier_contact_email, formal_letter_text, evidence_summary, response_deadline, credit_note_ref, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "disp_titan_55118", "INV-2025-55118", "DISP-2025-55118", "carr_titan_04",
+                "PENDING_CARRIER_REVIEW", 54000, "billing@titan-freight.example.com",
+                "Formal Notice of Contractual Freight Rate Discrepancy for Invoice #INV-2025-55118.\nDisputed amount: $540.00.\nEvidence: Scale ticket indicates gross weight 8,500 lbs, within contractual allowance per Clause 5.1.",
+                "Overweight surcharge of $540.00 billed without scale ticket verification.",
+                "2025-06-15T00:00:00Z", None, "2025-05-08T14:30:00Z", "2025-05-08T14:30:00Z"
+            )
+        )
+
         # 8. SEED AUDIT TRAIL LOGS
         record_audit_event(conn, "SYSTEM", "SYS-INIT", "DATABASE_SEEDED", "SYSTEM_ENGINE", {"status": "SUCCESS", "invoices_count": 5})
-        record_audit_event(conn, "INVOICE", "INV-2025-88419", "INVOICE_INGESTED", "DOCUMENT_PARSER", {"carrier": "APXG", "billed": 552200, "currency": "USD"})
+        record_audit_event(conn, "INVOICE", "INV-2025-88419", "INVOICE_INGESTED", "DOCUMENT_PARSER", {"carrier": "AGFL", "billed": 552200, "currency": "USD"})
         record_audit_event(conn, "INVOICE", "INV-2025-77102", "SETTLEMENT_RECONCILED", "PAYPAL_SANDBOX", {"paypal_batch_id": "PAYPAL-SBX-BATCH-991A4F", "amount": 185000})
 
         print("Database seeded successfully with 5 invoices, contracts, telematics, and audit trails!")

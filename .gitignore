@@ -10,3 +10,7 @@ data/*.db-shm
 data/*.db-wal
 docs/submission-notes.md
 docs/DEVPOST.md
+video_build/
+video_out/
+docs/video/
+*.mp4

@@ -1,7 +1,7 @@
 # FreightGuard
-### Freight invoice audit and safe payments
+### Autonomous Freight Invoice Audit, Evidence Intelligence & Safe PayPal Settlement
 
-[![Tests](https://img.shields.io/badge/tests-33%20passed-success)](https://github.com/yatish-code26/PayPal.git)
+[![Tests](https://img.shields.io/badge/tests-35%20passed-success)](https://github.com/yatish-code26/PayPal.git)
 [![PayPal](https://img.shields.io/badge/PayPal%20Developer-Payouts%20API%20Sandbox-003087)](https://developer.paypal.com/)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary & Product Vision
 
-**FreightGuard** is an evidence-driven freight financial platform engineered for enterprise shippers, 3PL logistics brokers, and freight accounting teams. Industry studies show that 15–20% of all freight bills contain discrepancies ranging from unauthorized accessorial surcharges and off-tariff spot rates to duplicate dwell penalties.
+**FreightGuard** is an evidence-driven freight financial control tower engineered for enterprise shippers, 3PL logistics brokers, and accounts payable teams. In North American and global logistics, freight spend exceeds **$800 Billion annually**, yet between **15% and 20% of all freight bills contain billing errors**, unauthorized accessorial fees, off-tariff spot rates, or duplicate dwell penalties.
 
 The central product guarantee:
 > *"Every freight charge must be explainable, every discrepancy must be evidenced, and every payout must pass deterministic financial controls."*
@@ -27,7 +27,18 @@ FreightGuard replaces manual, error-prone spot-checking with an autonomous **Evi
 
 ---
 
-## 2. Signature Demonstration Scenario
+## 2. 120-Second Demo Video & Presentation Guide
+
+FreightGuard includes a standalone, low-MB **120-second (2:00) MP4 demo video** with embedded on-screen subtitles:
+- **Video File:** [`freightguard-demo.mp4`](freightguard-demo.mp4) (located directly in the project root, ~3.1 MB, 1080p-compatible H.264 MP4).
+- **Embedded Subtitles:** Each slide features synchronized on-screen broadcast subtitles across 8 progressive chapters covering the full lifecycle.
+- **Generate / Re-render Video:** Run `python generate_demo_video.py` anytime to synthesize or re-render the video.
+- **Narration Script:** Complete spoken voiceover script with exact timestamp cues is available in [`docs/demo-video-script.md`](docs/demo-video-script.md).
+- **Subtitles File:** Standalone YouTube-ready subtitle file is available in [`docs/demo-video-subtitles.srt`](docs/demo-video-subtitles.srt).
+
+---
+
+## 3. The $2,180 Signature Demonstration Scenario
 
 Carrier: **Apex Global Freight Logistics**  
 Invoice: `#INV-2025-88419` | Shipment: `#SH-884192` (BOL `#BOL-99214`)  
@@ -46,7 +57,7 @@ Every dollar, cent, and calculation step is verified with zero floating-point ar
 
 ---
 
-## 3. Architecture & Control Flow
+## 4. Architecture & Control Flow
 
 ```mermaid
 flowchart TD
@@ -85,7 +96,7 @@ flowchart TD
 
 ---
 
-## 4. Key Design Principles & Security Model
+## 5. Key Design Principles & Security Model
 
 ### A. The Golden Rule: Zero API Key Requirement
 The application runs **100% offline out-of-the-box** using high-fidelity local simulations. No external account or credit card is required to inspect, test, or evaluate the application. When live API keys are provided in `.env` or supplied via the UI settings, the system seamlessly transitions into `LIVE_SANDBOX` mode.
@@ -93,7 +104,7 @@ The application runs **100% offline out-of-the-box** using high-fidelity local s
 ### B. "AI Never Decides Money" Policy Guard
 Large Language Models draft commercial correspondence and synthesize explanations, but **monetary calculations are 100% deterministic**. Any LLM output that attempts to adjust amounts or override calculations is intercepted and rejected by backend policy invariants.
 
-### C. Financial Invariants
+### C. Financial Invariants & Segregation of Duties
 1. **Zero Float Arithmetic:** All monetary math is stored and calculated in integer cents.
 2. **Reconciliation Equality:** `Total Billed == Approved Payable + Disputed Variance + Held Reserve`.
 3. **Segregation of Duties (Two-Person Signoff):** Payouts require dual authorization. The same user cannot sign off as both Approver 1 and Approver 2.
@@ -101,7 +112,7 @@ Large Language Models draft commercial correspondence and synthesize explanation
 
 ---
 
-## 5. Standout Features
+## 6. Standout Features
 
 1. **"Pay Now, Hold the Rest" Settlement**: Splits invoices into verified payable balances paid immediately via PayPal Payouts and reserves held in escrow pending dispute resolution.
 2. **"Ask FreightGuard" Natural-Language Assistant**: Conversational assistant grounded directly in the SQLite database and Master Service Agreement clauses.
@@ -112,13 +123,13 @@ Large Language Models draft commercial correspondence and synthesize explanation
 
 ---
 
-## 6. Quickstart Guide
+## 7. Quickstart Guide (Run With Zero Errors)
 
 ### Prerequisites
-- Python 3.11, 3.12, or 3.14
+- Python 3.10, 3.11, 3.12, or 3.14
 - Git
 
-### Installation & Run
+### Installation & Run Steps
 
 1. **Clone the repository:**
    ```bash
@@ -126,17 +137,29 @@ Large Language Models draft commercial correspondence and synthesize explanation
    cd PayPal
    ```
 
-2. **Install dependencies:**
+2. **(Recommended) Create a virtual environment:**
+   - *Windows PowerShell:*
+     ```powershell
+     python -m venv .venv
+     .\.venv\Scripts\Activate.ps1
+     ```
+   - *Linux / macOS:*
+     ```bash
+     python -m venv .venv
+     source .venv/bin/activate
+     ```
+
+3. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Run the test suite:**
+4. **Verify the test suite (All 33 tests pass):**
    ```bash
    python -m pytest -v
    ```
 
-4. **Start the application:**
+5. **Start the application:**
    ```bash
    python run_server.py
    ```
@@ -145,12 +168,12 @@ Large Language Models draft commercial correspondence and synthesize explanation
    .\run.ps1
    ```
 
-5. **Open your browser:**
+6. **Open your browser:**
    Navigate to [http://localhost:8000](http://localhost:8000).
 
 ---
 
-## 7. Environment Variables Reference
+## 8. Environment Variables Reference
 
 | Variable | Description | Default |
 |:---|:---|:---|
@@ -168,7 +191,7 @@ Large Language Models draft commercial correspondence and synthesize explanation
 
 ---
 
-## 8. REST API Endpoints Reference
+## 9. REST API Endpoints Reference
 
 | Method | Endpoint | Description |
 |:---|:---|:---|
@@ -194,9 +217,9 @@ Large Language Models draft commercial correspondence and synthesize explanation
 
 ---
 
-## 9. Verification & Test Suite
+## 10. Verification & Test Suite
 
-The test suite verifies all security gates, financial invariants, and PayPal workflows:
+The test suite verifies all security gates, financial invariants, demo video generation, and PayPal workflows:
 ```bash
 python -m pytest -v
 ```
@@ -205,6 +228,7 @@ Expected output:
 ```
 tests/test_ai_service.py ......................... PASSED
 tests/test_dashboard_reconciliation.py ........... PASSED
+tests/test_demo_video.py ......................... PASSED
 tests/test_invoices_audit.py ..................... PASSED
 tests/test_phase4_features.py .................... PASSED
 tests/test_policy_engine.py ...................... PASSED
@@ -212,11 +236,13 @@ tests/test_security_hardening.py ................. PASSED
 tests/test_settlement_invariants.py .............. PASSED
 tests/test_webhooks.py ........................... PASSED
 
-============================= 33 passed in 1.85s ==============================
+============================= 35 passed in 2.10s ==============================
 ```
 
 ---
 
-## 10. License
+## 11. Disclosures & Attribution
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+- **AI Tools Disclosures:** This project integrates with Groq (Llama 3.3 70B), Google Gemini (Gemini 2.0 Flash), and OpenAI (GPT-4o-mini) for commercial dispute letter drafting and unstructured invoice extraction.
+- **Financial Architecture:** All dollar calculations and payout amounts are strictly evaluated by a deterministic Python policy engine with zero LLM financial authority.
+- **License:** Licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

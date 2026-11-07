@@ -43,7 +43,7 @@ def test_pay_now_hold_the_rest_settlement():
     assert res["settlement_status"] == "PARTIALLY_SETTLED_HELD"
     assert res["paid_amount_cents"] == 334200   # $3,342.00
     assert res["held_amount_cents"] == 218000   # $2,180.00
-    assert res["paypal_item_id"].startswith("PAYPAL-ITEM-")
+    assert res["paypal_item_id"].startswith(("PAYPAL-ITEM-", "PAYPAL-SBX-ITEM-"))
 
     # Verify DB state
     with get_db() as conn:

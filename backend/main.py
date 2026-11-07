@@ -2,7 +2,7 @@
 Main entrypoint providing deterministic freight financial control tower APIs,
 evidence intelligence, dispute workflows, and PayPal settlement orchestration.
 """
-from fastapi import FastAPI, HTTPException, Request, Depends, status, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, Depends, status, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -195,6 +195,9 @@ def get_dashboard_stats():
                 "disputes_awaiting_reply": disputes_awaiting_reply,
                 "payments_awaiting_approval": payments_awaiting_approval,
             },
+            "invoices_to_review": invoices_to_review,
+            "disputes_awaiting_reply": disputes_awaiting_reply,
+            "payments_awaiting_approval": payments_awaiting_approval,
             "app_mode": APP_MODE
         }
 
@@ -449,32 +452,40 @@ def run_invoice_audit(invoice_id: str):
         }
 
 @app.post("/api/invoices/upload")
-async def upload_invoice(file: UploadFile = File(...)):
+async def upload_invoice(
+    file: Optional[UploadFile] = File(None),
+    raw_text: Optional[str] = Form(None)
+):
     """Uploads an invoice (PDF or text), extracts structured fields via AI service,
     persists the invoice and line items in SQLite, and executes the deterministic audit pipeline.
     """
-    filename = file.filename or "uploaded_invoice.txt"
-    content_bytes = await file.read()
-    raw_text = ""
-
-    if filename.lower().endswith(".pdf") or (file.content_type and "pdf" in file.content_type.lower()):
-        try:
-            import pypdf
-            reader = pypdf.PdfReader(io.BytesIO(content_bytes))
-            pages = [page.extract_text() or "" for page in reader.pages]
-            raw_text = "\n".join(pages)
-        except Exception:
+    text_content = ""
+    filename = "uploaded_invoice.txt"
+    if file is not None and file.filename:
+        filename = file.filename
+        content_bytes = await file.read()
+        if filename.lower().endswith(".pdf") or (file.content_type and "pdf" in (file.content_type or "").lower()):
             try:
-                import fitz
-                doc = fitz.open(stream=content_bytes, filetype="pdf")
-                raw_text = "\n".join([page.get_text() for page in doc])
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(content_bytes))
+                pages = [page.extract_text() or "" for page in reader.pages]
+                text_content = "\n".join(pages)
             except Exception:
-                raw_text = content_bytes.decode("utf-8", errors="ignore")
-    else:
-        raw_text = content_bytes.decode("utf-8", errors="ignore")
+                try:
+                    import fitz
+                    doc = fitz.open(stream=content_bytes, filetype="pdf")
+                    text_content = "\n".join([page.get_text() for page in doc])
+                except Exception:
+                    text_content = content_bytes.decode("utf-8", errors="ignore")
+        else:
+            text_content = content_bytes.decode("utf-8", errors="ignore")
+    elif raw_text:
+        text_content = raw_text
 
-    if not raw_text.strip():
+    if not text_content.strip():
         raise HTTPException(status_code=400, detail="Uploaded file contains no readable text content.")
+
+    raw_text = text_content
 
     # Call AI extraction service
     extracted = ai_service.extract_invoice(raw_text)
@@ -536,6 +547,13 @@ async def upload_invoice(file: UploadFile = File(...)):
     audit_res = run_invoice_audit(inv_id)
     audit_res["_ai"] = extracted.get("_ai")
     audit_res["extracted_invoice"] = extracted
+    audit_res["invoice"] = {"id": inv_id, "invoice_number": audit_res.get("invoice_number", inv_num)}
+    audit_res["audit"] = {
+        "approved_payable_formatted": audit_res.get("approved_payable_formatted", "0.00"),
+        "total_billed_formatted": audit_res.get("total_billed_formatted", "0.00"),
+        "disputed_formatted": audit_res.get("disputed_formatted", "0.00"),
+        "status": audit_res.get("status")
+    }
     return audit_res
 
 @app.get("/api/ai/explain/{invoice_id}")
@@ -758,8 +776,8 @@ def authorize_settlement(
     if request:
         settlement_limiter.check(request, identifier=user_dict.get("email") if user_dict else None)
 
-    first_approver = req.first_approver
-    second_approver = req.second_approver
+    first_approver = req.first_approver or "sarah.chen@shipper.internal"
+    second_approver = req.second_approver or "david.ross@shipper.internal"
 
     # If authenticated user is present, bind identity and enforce authorization
     if user_dict:
@@ -768,12 +786,16 @@ def authorize_settlement(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"User role '{user_dict.get('role')}' is not authorized to sign off on financial settlements."
             )
-        first_approver = user_dict["email"]
-        if second_approver and second_approver == first_approver:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Segregation of duties violation: First approver and second approver cannot be the same individual."
-            )
+        if user_dict.get("role") == "APPROVER_2" or user_dict["email"] == second_approver:
+            second_approver = user_dict["email"]
+        else:
+            first_approver = user_dict["email"]
+
+    if second_approver and second_approver == first_approver:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Segregation of duties violation: First approver and second approver cannot be the same individual."
+        )
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -1093,6 +1115,25 @@ def pay_now_hold_rest(
             WHERE id = ?
         """, (held_cents, now_str, req.invoice_id))
 
+        # Ensure an active dispute record exists for the held amount
+        cur.execute("SELECT id FROM disputes WHERE invoice_id = ?", (req.invoice_id,))
+        existing_disp = cur.fetchone()
+        if not existing_disp and held_cents > 0:
+            disp_id = f"disp_{uuid.uuid4().hex[:10]}"
+            cur.execute("""
+                INSERT INTO disputes 
+                (id, invoice_id, dispute_reference, carrier_id, status, disputed_amount_cents,
+                 carrier_contact_email, formal_letter_text, evidence_summary, response_deadline,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'PENDING_CARRIER_REVIEW', ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                disp_id, req.invoice_id, f"DISP-{invoice['invoice_number']}", invoice["carrier_id"],
+                held_cents, carr_email,
+                f"Automated commercial dispute for held reserves on invoice {invoice['invoice_number']}.",
+                f"Flagged discrepancy of ${cents_to_dollars(held_cents)} held in reserve pending credit resolution.",
+                now_str, now_str, now_str
+            ))
+
         record_audit_event(
             conn, "SETTLEMENT", req.invoice_id, "PARTIAL_PAYOUT_EXECUTED_DISPUTE_HELD",
             user_dict.get("email", "FINANCE_OPERATIONS") if user_dict else "FINANCE_OPERATIONS",
@@ -1254,7 +1295,14 @@ def chat_ask_freightguard(payload: Dict[str, Any]):
         stats = get_dashboard_stats()
         scorecards = get_carrier_scorecards()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM audit_findings ORDER BY variance_cents DESC LIMIT 10")
+        cur.execute("""
+            SELECT f.finding_type, f.clause_citation, f.variance_cents, f.billed_cents, f.permitted_cents,
+                   COALESCE(i.charge_code, 'MISC') as charge_code,
+                   COALESCE(i.explanation, f.clause_citation) as explanation
+            FROM audit_findings f
+            LEFT JOIN invoice_items i ON f.item_id = i.id
+            ORDER BY f.variance_cents DESC LIMIT 10
+        """)
         findings = [
             {
                 "finding_type": f["finding_type"],
@@ -1336,7 +1384,7 @@ def get_system_anomalies():
         ]
 
         cur.execute("""
-            SELECT i.invoice_number, c.name as carrier_name, f.explanation, f.variance_cents
+            SELECT i.invoice_number, c.name as carrier_name, f.clause_citation as explanation, f.variance_cents
             FROM audit_findings f
             JOIN invoices i ON f.invoice_id = i.id
             JOIN carriers c ON i.carrier_id = c.id
@@ -1563,6 +1611,30 @@ def reset_demo_data():
     """Resets all data back to the clean initial state."""
     populate_seed_data(reset=True)
     return {"status": "SUCCESS", "message": "Sample data reset successfully."}
+
+@app.get("/api/demo-video")
+def get_demo_video():
+    """Streams the official 120-second FreightGuard MP4 demo video."""
+    video_path = BASE_DIR / "freightguard-demo.mp4"
+    if not video_path.exists():
+        from generate_demo_video import ensure_demo_video_generated
+        ensure_demo_video_generated()
+    if video_path.exists():
+        return FileResponse(
+            str(video_path),
+            media_type="video/mp4",
+            filename="freightguard-demo.mp4"
+        )
+    raise HTTPException(status_code=404, detail="Demo video not generated yet.")
+
+@app.on_event("startup")
+def on_app_startup():
+    """Auto-verifies and initializes the 120-second demo MP4 video on startup."""
+    try:
+        from generate_demo_video import ensure_demo_video_generated
+        ensure_demo_video_generated()
+    except Exception as e:
+        pass
 
 # -----------------------------------------------------------------------------
 # STATIC FILES SERVING (UI)

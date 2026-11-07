@@ -1,0 +1,64 @@
+1
+00:00:00,000 --> 00:00:07,000
+FreightGuard: Autonomous Freight Invoice Audit, Evidence Intelligence, and Safe PayPal Settlement.
+
+2
+00:00:07,000 --> 00:00:15,000
+In enterprise logistics, 15 to 20 percent of all freight bills contain billing errors, off-tariff rates, and duplicate penalties.
+
+3
+00:00:15,000 --> 00:00:23,000
+Here in the Home view, our triage queue catches unreviewed invoices, pending carrier disputes, and payments awaiting authorization.
+
+4
+00:00:23,000 --> 00:00:30,000
+Every dollar reconciles to the exact cent across our four KPIs: Billed, Approved, Disputed, and Held in reserve.
+
+5
+00:00:30,000 --> 00:00:38,000
+Let us inspect Invoice 88419 from Apex Global Freight, which billed 5,522 dollars for a dry-van shipment from Chicago to Dallas.
+
+6
+00:00:38,000 --> 00:00:46,000
+FreightGuard's deterministic policy engine breaks down every line item against the Master Service Agreement and telematics dwell logs.
+
+7
+00:00:46,000 --> 00:00:54,000
+We flagged 2,180 dollars in overcharges: 600 dollars in linehaul rate creep, 380 in fuel surcharge inflation, 350 for an unauthorized liftgate, and 850 for duplicate congestion.
+
+8
+00:00:54,000 --> 00:01:02,000
+Our foundational principle: AI Never Decides Money. LLMs explain findings and draft letters, but all monetary math is evaluated in integer cents.
+
+9
+00:01:02,000 --> 00:01:10,000
+Here is our standout feature: 'Pay Now, Hold the Rest' settlement.
+
+10
+00:01:10,000 --> 00:01:18,000
+With one click, we disburse the verified 3,342 dollars immediately via PayPal Payouts to maintain carrier goodwill, holding the 2,180 dollars in reserve.
+
+11
+00:01:18,000 --> 00:01:26,000
+Next, FreightGuard's AI synthesizes a formal commercial dispute notice citing exact Master Service Agreement clauses and DOE fuel indexes.
+
+12
+00:01:26,000 --> 00:01:34,000
+With another click, we export a clean, downloadable dispute PDF notice generated via our zero-dependency pure-Python engine.
+
+13
+00:01:34,000 --> 00:01:42,000
+In the Payments Center, we enforce two-person segregation of duties between AP Lead Sarah Chen and Controller David Ross, protected by idempotency keys.
+
+14
+00:01:42,000 --> 00:01:50,000
+Authoritative PayPal webhooks verify cryptographic HMAC signatures, deduplicating event IDs and transitioning payment status to RECONCILED.
+
+15
+00:01:50,000 --> 00:01:58,000
+Carrier Scorecards aggregate historical billing accuracy, projecting annual financial leakage and providing automated renewal negotiation talking points.
+
+16
+00:01:58,000 --> 00:02:04,000
+Finally, our Activity log uses SHA-256 hash chaining. One click validates the entire chain, giving auditors immutable mathematical proof.
+

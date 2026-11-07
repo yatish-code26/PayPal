@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
-DB_PATH = DATA_DIR / "freightguard.db"
+DB_PATH = Path(os.getenv("FREIGHTGUARD_DB_PATH", str(DATA_DIR / "freightguard.db")))
 
 # Mode configuration:
 # 'LOCAL_DEMO': Deterministic local simulation of AI and PayPal sandbox (default, 100% offline)

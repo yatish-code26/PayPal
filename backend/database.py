@@ -220,6 +220,15 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_audit_events_entity ON audit_events(entity_id);
         """)
 
+        # Ensure schema migrations for existing SQLite databases
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(audit_events)")
+        existing_cols = {row["name"] for row in cur.fetchall()}
+        if "prev_hash" not in existing_cols:
+            conn.execute("ALTER TABLE audit_events ADD COLUMN prev_hash TEXT")
+        if "event_hash" not in existing_cols:
+            conn.execute("ALTER TABLE audit_events ADD COLUMN event_hash TEXT")
+
 def record_audit_event(conn: sqlite3.Connection, entity_type: str, entity_id: str, event_name: str, actor: str, details: dict) -> str:
     """Helper to record an immutable, hash-chained audit event."""
     import uuid
@@ -287,8 +296,10 @@ def verify_audit_chain_integrity(conn: sqlite3.Connection) -> dict:
 
     return {
         "valid": True,
+        "chain_valid": True,
         "total_events": len(rows),
         "verified_count": verified_count,
         "head_hash": expected_prev,
+        "latest_hash": expected_prev,
         "message": f"Hash chain valid: verified {verified_count} events from genesis to head."
     }

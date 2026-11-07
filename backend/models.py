@@ -91,8 +91,8 @@ class SettlementAuthorizeRequest(BaseModel):
 
 class SettlementPayoutRequest(BaseModel):
     invoice_id: str
-    idempotency_key: str = Field(..., min_length=8)
-    first_approver: str
+    idempotency_key: Optional[str] = None
+    first_approver: Optional[str] = "sarah.chen@shipper.internal"
     second_approver: Optional[str] = None
     simulate_failure: bool = False # For testing negative failure recovery
 
