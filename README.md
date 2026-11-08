@@ -1,7 +1,7 @@
 # FreightGuard
 ### Autonomous Freight Invoice Audit, Evidence Intelligence & Safe PayPal Settlement
 
-[![Tests](https://img.shields.io/badge/tests-35%20passed-success)](https://github.com/yatish-code26/PayPal.git)
+[![Tests](https://img.shields.io/badge/tests-46%20passed-success)](https://github.com/yatish-code26/PayPal.git)
 [![PayPal](https://img.shields.io/badge/PayPal%20Developer-Payouts%20API%20Sandbox-003087)](https://developer.paypal.com/)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -173,14 +173,32 @@ Large Language Models draft commercial correspondence and synthesize explanation
 
 ---
 
-## 8. Environment Variables Reference
+## 8. Environment Variables & Operational Modes
+
+FreightGuard seamlessly toggles between **Built-in Offline Mode** (zero keys required) and **Live External Mode** automatically based on variables configured in `D:\PayPal\.env`:
+
+### Live vs. Built-in Capability Matrix
+
+| Capability | Built-in Mode (Zero Keys) | Live Mode (Configured via `.env`) |
+|:---|:---|:---|
+| **PayPal Authentication** | Simulated local Bearer token | Real OAuth2 handshake (`https://api-m.sandbox.paypal.com/v1/oauth2/token`) cached until expiry |
+| **Payout Disbursement** | Deterministic batch & item IDs with state progression | Real `POST /v1/payments/payouts` with `PayPal-Request-Id` and `PAYPAL_RECEIVER_EMAIL` |
+| **Status Reconciliation** | Simulated item lifecycle transitions | Live PayPal status queries (`GET /v1/payments/payouts/{batch_id}` & `GET /v1/payments/payouts-item/{item_id}`) |
+| **Webhook Verification** | Cryptographic local HMAC-SHA256 signature check | Real PayPal certificate verification (`POST /v1/notifications/verify-webhook-signature`) |
+| **Status Polling Fallback** | Instant local reconciliation | Real-time PayPal batch polling via `/api/settlements/{id}/refresh-status` (no public tunnel required) |
+| **AI Invoice Extraction** | Deterministic regex/heuristic linehaul & accessorial parser | Live LLM JSON schema extraction (Groq, Gemini, or OpenAI) |
+| **Dispute Drafting** | Pre-compiled contract legal templates citing MSAs | Contract-grounded LLM dispute notice synthesis with BM25 clause citations |
+| **Policy Invariants** | Strict decimal cents arithmetic (`Billed == Approved + Disputed + Held`) | Identical deterministic enforcement: AI output that alters amounts is strictly rejected |
+
+### Configuration Reference (`.env`)
 
 | Variable | Description | Default |
 |:---|:---|:---|
-| `FREIGHTGUARD_MODE` | Operational mode: `LOCAL_DEMO` or `LIVE_SANDBOX` | `LOCAL_DEMO` |
+| `FREIGHTGUARD_MODE` | Operational mode: `LOCAL_DEMO` or `LIVE_SANDBOX` | `LOCAL_DEMO` (auto-switches to `LIVE_SANDBOX` when client ID/secret are set) |
 | `PAYPAL_CLIENT_ID` | PayPal Developer Platform Sandbox Client ID | `""` |
 | `PAYPAL_CLIENT_SECRET` | PayPal Developer Platform Sandbox Client Secret | `""` |
 | `PAYPAL_WEBHOOK_ID` | PayPal Webhook ID for live webhook verification | `""` |
+| `PAYPAL_RECEIVER_EMAIL` | Sandbox recipient email for payout disbursement | `""` |
 | `AI_PROVIDER` | LLM Provider: `LOCAL_DETERMINISTIC`, `GROQ`, `GEMINI`, `OPENAI` | `LOCAL_DETERMINISTIC` |
 | `GROQ_API_KEY` | Groq API Key (uses `llama-3.3-70b-versatile`) | `""` |
 | `GEMINI_API_KEY` | Gemini API Key (uses `gemini-2.0-flash`) | `""` |
@@ -207,6 +225,7 @@ Large Language Models draft commercial correspondence and synthesize explanation
 | `POST` | `/api/settlements/authorize` | Enforce two-person signoff and create settlement intent |
 | `POST` | `/api/settlements/payout` | Execute PayPal Sandbox Payout with idempotency |
 | `POST` | `/api/settlements/pay-now-hold-rest` | Split settlement: pay undisputed, hold disputed variance |
+| `POST` | `/api/settlements/{id}/refresh-status` | Polling fallback: query authoritative PayPal Sandbox batch/item state |
 | `POST` | `/api/webhooks/paypal` | Authoritative PayPal webhook listener with signature verification |
 | `GET` | `/api/carriers/scorecards` | Carrier performance metrics and renewal negotiation talking points |
 | `POST` | `/api/chat/ask` | Natural-language query answering grounded in SQLite data |

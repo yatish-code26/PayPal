@@ -134,6 +134,7 @@ def _call_chat_completion(
     system_prompt: str,
     user_prompt: str,
     timeout: float = 15.0,
+    max_tokens: Optional[int] = None,
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """Calls OpenAI-compatible /chat/completions endpoint with temperature 0.
     Returns: (success, raw_content, error_message)
@@ -160,6 +161,8 @@ def _call_chat_completion(
             {"role": "user", "content": user_prompt},
         ],
     }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
 
     try:
         with httpx.Client(timeout=timeout) as client:
@@ -570,8 +573,8 @@ def answer_freight_question(question: str, db_context: Dict[str, Any]) -> Dict[s
             f"Database Records & Contract Context:\n{json.dumps(db_context, indent=2)}\n\n"
             "Respond in JSON format."
         )
-        raw_json, err = _call_chat_completion(provider, system_prompt, user_prompt, max_tokens=600)
-        if raw_json and not err:
+        ok, raw_json, err = _call_chat_completion(provider, system_prompt, user_prompt, max_tokens=600)
+        if ok and raw_json:
             try:
                 parsed = json.loads(raw_json)
                 validated = ChatAnswerAI(**parsed)

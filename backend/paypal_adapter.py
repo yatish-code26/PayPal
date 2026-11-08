@@ -33,6 +33,7 @@ from backend.config import (
     PAYPAL_CLIENT_SECRET,
     PAYPAL_SANDBOX_BASE_URL,
     PAYPAL_WEBHOOK_ID,
+    PAYPAL_RECEIVER_EMAIL,
     WEBHOOK_LOCAL_HMAC_SECRET,
 )
 from backend.policy_engine import cents_to_dollars
@@ -234,6 +235,13 @@ class PayPalPayoutsAdapter:
         """
         amount_str = cents_to_dollars(amount_cents).replace(",", "")
 
+        # In live sandbox mode, prefer PAYPAL_RECEIVER_EMAIL from env/config if configured
+        effective_receiver = receiver_email
+        if self.mode() == "LIVE_SANDBOX":
+            configured_receiver = os.getenv("PAYPAL_RECEIVER_EMAIL") or PAYPAL_RECEIVER_EMAIL
+            if configured_receiver and configured_receiver.strip():
+                effective_receiver = configured_receiver.strip()
+
         payout_payload = {
             "sender_batch_header": {
                 "sender_batch_id": sender_batch_id,
@@ -246,7 +254,7 @@ class PayPalPayoutsAdapter:
                     "amount": {"value": amount_str, "currency": currency},
                     "note": note,
                     "sender_item_id": f"ITEM-{idempotency_key[:16]}",
-                    "receiver": receiver_email,
+                    "receiver": effective_receiver,
                 }
             ],
         }
@@ -330,17 +338,34 @@ class PayPalPayoutsAdapter:
                     batch_header = res_data.get("batch_header", {})
                     batch_id = batch_header.get("payout_batch_id")
                     batch_status = batch_header.get("batch_status", "PROCESSING")
+                    item_id = None
+                    item_status = "PENDING"
+
+                    items = res_data.get("items")
+                    if items and len(items) > 0:
+                        item_id = items[0].get("payout_item_id")
+                        item_status = items[0].get("transaction_status", "PENDING")
+                    elif batch_id:
+                        try:
+                            time.sleep(0.5)
+                            batch_info = self.get_payout_batch_status(batch_id)
+                            b_items = batch_info.get("items", [])
+                            if b_items and len(b_items) > 0:
+                                item_id = b_items[0].get("payout_item_id")
+                                item_status = b_items[0].get("transaction_status", "PENDING")
+                        except Exception as poll_err:
+                            logger.warning(f"Could not immediately fetch payout items for batch {batch_id}: {poll_err}")
 
                     return {
                         "is_simulated": 0,
                         "mode_label": "Live PayPal Sandbox Gateway",
                         "batch_id": batch_id,
-                        "item_id": None,
+                        "item_id": item_id,
                         "batch_status": batch_status,
-                        "item_status": "PENDING",
+                        "item_status": item_status,
                         "amount_cents": amount_cents,
                         "currency": currency,
-                        "receiver_email": receiver_email,
+                        "receiver_email": effective_receiver,
                         "paypal_fee_cents": 25,
                         "raw_response": res_data,
                     }
@@ -377,8 +402,25 @@ class PayPalPayoutsAdapter:
         token = self._acquire_oauth_token()
         url = f"{PAYPAL_SANDBOX_BASE_URL}/v1/payments/payouts/{payout_batch_id}"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"}, method="GET")
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            return json.loads(resp.read().decode())
+        max_retries = 3
+        backoff = 1.0
+        for attempt in range(max_retries):
+            try:
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode()
+                if e.code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
+                    time.sleep(backoff)
+                    backoff *= 2.0
+                    continue
+                raise PayPalAdapterException(f"PayPal Sandbox Batch Query Error ({e.code}): {err_body}")
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(backoff)
+                    backoff *= 2.0
+                    continue
+                raise PayPalAdapterException(f"Network error querying PayPal batch status: {str(e)}")
 
     def get_payout_item_status(self, payout_item_id: str) -> Dict[str, Any]:
         """Retrieves authoritative payout item status from PayPal Sandbox."""
@@ -392,8 +434,25 @@ class PayPalPayoutsAdapter:
         token = self._acquire_oauth_token()
         url = f"{PAYPAL_SANDBOX_BASE_URL}/v1/payments/payouts-item/{payout_item_id}"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"}, method="GET")
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            return json.loads(resp.read().decode())
+        max_retries = 3
+        backoff = 1.0
+        for attempt in range(max_retries):
+            try:
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode()
+                if e.code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
+                    time.sleep(backoff)
+                    backoff *= 2.0
+                    continue
+                raise PayPalAdapterException(f"PayPal Sandbox Item Query Error ({e.code}): {err_body}")
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(backoff)
+                    backoff *= 2.0
+                    continue
+                raise PayPalAdapterException(f"Network error querying PayPal item status: {str(e)}")
 
     def verify_webhook_signature(
         self,

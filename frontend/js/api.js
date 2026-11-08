@@ -138,6 +138,8 @@ const API = {
       payout_item_id: payoutItemId,
       payout_batch_id: payoutBatchId
     }),
+  refreshSettlementStatus: (invoiceId) =>
+    API.post(`/api/settlements/${encodeURIComponent(invoiceId)}/refresh-status`),
 
   // Advanced Features & Intelligence
   getCarrierScorecards: () => API.get("/api/carriers/scorecards"),

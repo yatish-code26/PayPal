@@ -1206,6 +1206,99 @@ def resolve_dispute(dispute_id: str, payload: Dict[str, Any] = {}):
             "message": f"Dispute resolved. Credit note {credit_ref} recorded. Held funds released; invoice reconciled."
         }
 
+@app.post("/api/settlements/{invoice_id}/refresh-status")
+def refresh_settlement_status(invoice_id: str):
+    """Fallback status refresh: polls authoritative PayPal Sandbox for batch/item status
+    and reconciles database without requiring an external public webhook URL."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
+        inv = cur.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found.")
+
+        invoice = dict(inv)
+        cur.execute(
+            "SELECT * FROM payout_records WHERE invoice_id = ? ORDER BY created_at DESC LIMIT 1",
+            (invoice_id,)
+        )
+        payout = cur.fetchone()
+        if not payout:
+            raise HTTPException(status_code=404, detail="No payout record found for this invoice.")
+
+        p_dict = dict(payout)
+        batch_id = p_dict.get("paypal_batch_id")
+        item_id = p_dict.get("paypal_item_id")
+
+        batch_status = p_dict.get("batch_status", "PROCESSING")
+        item_status = p_dict.get("item_status", "PENDING")
+        details = {}
+
+        if batch_id:
+            try:
+                b_info = paypal_adapter.get_payout_batch_status(batch_id)
+                details["batch"] = b_info
+                b_hdr = b_info.get("batch_header", {})
+                batch_status = b_hdr.get("batch_status", batch_status)
+                items = b_info.get("items", [])
+                if items:
+                    item_id = items[0].get("payout_item_id", item_id)
+                    item_status = items[0].get("transaction_status", item_status)
+            except Exception as e:
+                logger.warning(f"Error fetching batch status for {batch_id}: {e}")
+
+        if item_id and (not item_status or item_status in ("PENDING", "PROCESSING")):
+            try:
+                i_info = paypal_adapter.get_payout_item_status(item_id)
+                details["item"] = i_info
+                item_status = i_info.get("transaction_status", item_status)
+            except Exception as e:
+                logger.warning(f"Error fetching item status for {item_id}: {e}")
+
+        # Update payout record
+        cur.execute("""
+            UPDATE payout_records
+            SET batch_status = ?, item_status = ?, paypal_item_id = ?, updated_at = ?
+            WHERE id = ?
+        """, (batch_status, item_status, item_id, datetime.now(timezone.utc).isoformat(), p_dict["id"]))
+
+        # Update invoice status
+        new_inv_status = invoice["settlement_status"]
+        if item_status == "SUCCESS":
+            new_inv_status = "PARTIALLY_SETTLED_HELD" if invoice["held_amount_cents"] > 0 else "RECONCILED"
+        elif item_status in ("FAILED", "BLOCKED"):
+            new_inv_status = "PAYOUT_FAILED"
+        elif item_status in ("PENDING", "UNCLAIMED"):
+            new_inv_status = "PAYOUT_INITIATED"
+
+        cur.execute(
+            "UPDATE invoices SET settlement_status = ?, updated_at = ? WHERE id = ?",
+            (new_inv_status, datetime.now(timezone.utc).isoformat(), invoice_id)
+        )
+
+        record_audit_event(
+            conn, "SETTLEMENT", invoice_id, "SETTLEMENT_STATUS_REFRESHED", "PAYPAL_GATEWAY",
+            {
+                "batch_id": batch_id,
+                "item_id": item_id,
+                "batch_status": batch_status,
+                "item_status": item_status,
+                "previous_status": invoice["settlement_status"],
+                "settlement_status": new_inv_status,
+                "mode": paypal_adapter.mode()
+            }
+        )
+
+        return {
+            "invoice_id": invoice_id,
+            "settlement_status": new_inv_status,
+            "paypal_batch_id": batch_id,
+            "paypal_item_id": item_id,
+            "batch_status": batch_status,
+            "item_status": item_status,
+            "details": details
+        }
+
 @app.get("/api/audit-events/verify-integrity")
 def verify_audit_trail_integrity():
     """Cryptographically verifies the SHA-256 hash chain of the immutable audit trail."""

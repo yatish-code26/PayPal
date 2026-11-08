@@ -96,67 +96,19 @@ const SettingsView = {
           </div>
         </div>
 
-        <!-- Collapsed Section: Advanced Live Credentials (Optional, Closed by Default) -->
+        <!-- Integration Diagnostics -->
         <div class="card" style="margin-bottom: 24px;">
-          <details style="cursor: pointer;">
-            <summary style="font-weight: 700; font-size: 14px; color: var(--text-primary); outline: none; user-select: none;">
-              Advanced: Connect live services (optional)
-            </summary>
-
-            <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-subtle); font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
-              <p style="margin-bottom: 16px;">
-                FreightGuard operates out-of-the-box with zero API keys. To connect live PayPal Sandbox accounts or custom LLM providers, enter credentials below. Credentials are held in volatile memory only and never written to disk.
-              </p>
-
-              <div class="workbench-split-grid" style="margin-bottom: 16px;">
-                <div>
-                  <div style="margin-bottom: 12px;">
-                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">AI Provider</label>
-                    <select id="cfg-ai-provider" class="form-select" style="width: 100%;">
-                      <option value="LOCAL_DETERMINISTIC" ${diag.ai_engine.active_provider === 'LOCAL_DETERMINISTIC' ? 'selected' : ''}>Built-in (Zero API Key)</option>
-                      <option value="GROQ" ${diag.ai_engine.active_provider === 'GROQ' ? 'selected' : ''}>Groq (llama-3.3-70b-versatile)</option>
-                      <option value="GEMINI" ${diag.ai_engine.active_provider === 'GEMINI' ? 'selected' : ''}>Gemini (gemini-2.0-flash)</option>
-                      <option value="OPENAI" ${diag.ai_engine.active_provider === 'OPENAI' ? 'selected' : ''}>OpenAI (gpt-4o-mini)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">API Key (Groq / Gemini / OpenAI)</label>
-                    <input type="password" id="cfg-ai-key" class="form-input mono" style="width: 100%;" placeholder="Enter key (or leave empty for built-in)">
-                  </div>
-                </div>
-
-                <div>
-                  <div style="margin-bottom: 12px;">
-                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">PayPal Sandbox Client ID</label>
-                    <input type="text" id="cfg-paypal-client-id" class="form-input mono" style="width: 100%;" placeholder="e.g. A21AAJ... (or leave empty)">
-                  </div>
-
-                  <div style="margin-bottom: 12px;">
-                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">PayPal Sandbox Client Secret</label>
-                    <input type="password" id="cfg-paypal-client-secret" class="form-input mono" style="width: 100%;" placeholder="Enter secret (masked)">
-                  </div>
-
-                  <div>
-                    <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">PayPal Webhook ID (Optional)</label>
-                    <input type="text" id="cfg-paypal-webhook-id" class="form-input mono" style="width: 100%;" placeholder="e.g. 8W... (for live signature check)">
-                  </div>
-                </div>
-              </div>
-
-              <div style="display: flex; gap: 10px;">
-                <button class="btn btn-primary btn-sm" onclick="SettingsView.saveSettings()">
-                  Apply Credentials (Memory Only)
-                </button>
-                <button class="btn btn-secondary btn-sm" onclick="SettingsView.testConnection()">
-                  Test Connection
-                </button>
-                <button class="btn btn-secondary btn-sm" onclick="SettingsView.clearCredentials()">
-                  Revert to Built-in
-                </button>
-              </div>
-            </div>
-          </details>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 10px;">
+            <span style="font-weight: 700; font-size: 14px;">Environment Integration Diagnostics</span>
+            <button class="btn btn-secondary btn-sm" onclick="SettingsView.testConnection()">
+              Test Connection
+            </button>
+          </div>
+          <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+            <div>&bull; <strong>AI Mode:</strong> ${aiModeLabel} (Configured via .env or built-in fallback)</div>
+            <div>&bull; <strong>Payments Mode:</strong> ${paypalModeLabel} (Configured via .env or built-in sandbox)</div>
+            <div>&bull; <strong>Credential Storage:</strong> Environment variables only (.env is git-ignored; secrets never committed or logged)</div>
+          </div>
         </div>
 
         <!-- Data Management Section: Reset Sample Data -->
@@ -210,7 +162,12 @@ const SettingsView = {
     try {
       App.showToast("Testing gateway connection...", "info");
       const res = await API.testConnection();
-      App.showToast(`Connection Test: PayPal [${res.paypal.status}], AI [${res.ai.status}]`, "success");
+      if (res.success) {
+        App.showToast(`Gateway Connected: ${res.message || res.mode}`, "success");
+      } else {
+        App.showToast(`Gateway test: ${res.message}`, "warning");
+      }
+      await this.loadDiagnostics();
     } catch (e) {
       App.showToast(`Connection test failed: ${e.message}`, "error");
     }

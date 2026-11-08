@@ -193,7 +193,10 @@ const SettlementView = {
                 <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
                   Simulate authoritative webhook event delivery with HMAC signature verification:
                 </p>
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button class="btn btn-secondary btn-sm" id="btn-refresh-payout-status" onclick="SettlementView.refreshStatus('${invoice.id}')" title="Poll PayPal Sandbox for authoritative batch/item state">
+                    Poll / Refresh Status
+                  </button>
                   <button class="btn btn-success btn-sm" onclick="SettlementView.triggerWebhook('PAYMENT.PAYOUTS-ITEM.SUCCEEDED', '${invoice.payout_record.paypal_item_id}', '${invoice.payout_record.paypal_batch_id}')">
                     Simulate Item Succeeded (200 OK)
                   </button>
@@ -284,6 +287,18 @@ const SettlementView = {
       await ControlTowerView.loadStats();
     } catch (e) {
       App.showToast(`Webhook simulation failed: ${e.message}`, "error");
+    }
+  },
+
+  async refreshStatus(invoiceId) {
+    const id = invoiceId || this.currentInvoiceId;
+    try {
+      const res = await API.refreshSettlementStatus(id);
+      App.showToast(`Status refreshed: ${res.batch_status || 'OK'} / ${res.item_status || 'OK'}`, "success");
+      await this.loadSettlementView(this.currentInvoiceId);
+      await ControlTowerView.loadStats();
+    } catch (e) {
+      App.showToast(`Status refresh failed: ${e.message}`, "error");
     }
   }
 };

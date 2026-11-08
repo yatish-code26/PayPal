@@ -2,8 +2,11 @@
 Verifies that freightguard-demo.mp4 is generated, has valid MP4 ISO boxes,
 and complies with official 120-second demonstration standards.
 """
-import pytest
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import pytest
 from generate_demo_video import generate_demo_video, OUTPUT_MP4
 
 def test_demo_video_generation_and_headers():

@@ -4,8 +4,12 @@ Guarantees strict isolation of external credentials.
 """
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+# Load environment variables from .env file if present
+load_dotenv(BASE_DIR / ".env")
+
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -13,20 +17,29 @@ DB_PATH = Path(os.getenv("FREIGHTGUARD_DB_PATH", str(DATA_DIR / "freightguard.db
 
 # Mode configuration:
 # 'LOCAL_DEMO': Deterministic local simulation of AI and PayPal sandbox (default, 100% offline)
-# 'LIVE_SANDBOX': Live external PayPal Sandbox API (requires explicit user authorization)
+# 'LIVE_SANDBOX': Live external PayPal Sandbox API (automatic when client ID & secret are set)
 APP_MODE = os.getenv("FREIGHTGUARD_MODE", "LOCAL_DEMO")
 
 # PayPal Sandbox Configuration (Server-side only, never exposed to browser)
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
-PAYPAL_SANDBOX_BASE_URL = "https://api-m.sandbox.paypal.com"
+PAYPAL_SANDBOX_BASE_URL = os.getenv("PAYPAL_SANDBOX_BASE_URL", "https://api-m.sandbox.paypal.com")
 PAYPAL_WEBHOOK_ID = os.getenv("PAYPAL_WEBHOOK_ID", "")
+PAYPAL_RECEIVER_EMAIL = os.getenv("PAYPAL_RECEIVER_EMAIL", "")
 
 # AI Engine Provider Configuration (Groq, Gemini, OpenAI)
 AI_PROVIDER = os.getenv("AI_PROVIDER", "LOCAL_DETERMINISTIC")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+def mask_secret(val: str, prefix_len: int = 6, suffix_len: int = 4) -> str:
+    """Masks secrets safely for diagnostics/status display without leaking values."""
+    if not val:
+        return "NOT_SET"
+    if len(val) <= prefix_len + suffix_len:
+        return "****"
+    return f"{val[:prefix_len]}...{val[-suffix_len:]}"
 
 # Security & CORS Settings
 CORS_ALLOWED_ORIGINS = [
